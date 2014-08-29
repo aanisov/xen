@@ -481,12 +481,23 @@ int route_irq_to_guest(struct domain *d, unsigned int virq,
         }
 
         if ( test_bit(_IRQ_GUEST, &desc->status) )
-            printk(XENLOG_G_ERR "IRQ %u is already used by domain %u\n",
-                   irq, ad->domain_id);
+        {
+            printk(XENLOG_G_DEBUG "IRQ %u is reassigned from domain %u to domain %u\n",
+                    irq, ad->domain_id, d->domain_id);
+
+            retval = gic_remove_irq_from_guest(ad, irq, desc);
+            if ( retval )
+                printk(XENLOG_G_ERR "failed to remove IRQ %u from domain %u (%d)\n",
+                        irq, ad->domain_id, retval);
+            xfree(desc->action);
+            desc->action = NULL;
+        }
         else
+        {
             printk(XENLOG_G_ERR "IRQ %u is already used by Xen\n", irq);
-        retval = -EBUSY;
-        goto out;
+			retval = -EBUSY;
+			goto out;
+        }
     }
 
     retval = __setup_irq(desc, 0, action);
