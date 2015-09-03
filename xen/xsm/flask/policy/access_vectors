@@ -248,6 +248,10 @@ class domain2
     mem_sharing
 # XEN_DOMCTL_psr_cat_op
     psr_cat_op
+# XEN_DOMCTL_access_remote_pagedir
+    access_remote_pagedir
+# XEN_DOMCTL_set_11_mapping
+    set_11_mapping
 }
 
 # Similar to class domain, but primarily contains domctls related to HVM domains

@@ -1211,6 +1211,8 @@ struct xen_domctl {
 #define XEN_DOMCTL_monitor_op                    77
 #define XEN_DOMCTL_psr_cat_op                    78
 #define XEN_DOMCTL_soft_reset                    79
+#define XEN_DOMCTL_access_remote_pagedir         80
+#define XEN_DOMCTL_set_11_mapping                81
 #define XEN_DOMCTL_gdbsx_guestmemio            1000
 #define XEN_DOMCTL_gdbsx_pausevcpu             1001
 #define XEN_DOMCTL_gdbsx_unpausevcpu           1002
