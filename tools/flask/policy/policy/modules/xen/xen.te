@@ -87,6 +87,8 @@ allow dom0_t xen_t:version {
 
 allow dom0_t xen_t:mmu memorymap;
 
+allow dom0_t domd_t:domain2 set_11_mapping;
+
 # Allow dom0 to use these domctls on itself. For domctls acting on other
 # domains, see the definitions of create_domain and manage_domain.
 allow dom0_t dom0_t:domain {
