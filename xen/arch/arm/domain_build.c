@@ -1070,7 +1070,7 @@ static int map_device_children(struct domain *d,
 {
     int ret;
 
-    if ( dt_device_type_is_equal(dev, "pci") )
+    if ( dt_device_type_is_equal(dev, "pci")  && !dt_device_for_passthrough(dev) )
     {
         DPRINT("Mapping children of %s to guest\n", dt_node_full_name(dev));
 
