@@ -609,6 +609,16 @@ long do_domctl(XEN_GUEST_HANDLE_PARAM(xen_domctl_t) u_domctl)
 
         ret = 0;
 
+        /*
+         * Check is domain should be 1:1 mapped (in this case
+         * this we'll set this domain as privelleged
+         */
+        if ( !xsm_domctl(XSM_HOOK, d, XEN_DOMCTL_set_11_mapping) )
+        {
+            d->is_privileged = true;
+            d->is_allowed_11_mapping = true;
+        }
+
         memcpy(d->handle, op->u.createdomain.handle,
                sizeof(xen_domain_handle_t));
 

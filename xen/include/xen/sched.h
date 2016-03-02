@@ -386,6 +386,10 @@ struct domain
     bool_t           disable_migrate;
     /* Is this guest being debugged by dom0? */
     bool_t           debugger_attached;
+    /* Is 1:1 memory mapping allowed */
+    bool_t           is_allowed_11_mapping;
+    /* Is 1:1 memory allocated for this domain? */
+    bool_t           is_11_mem_allocated;
     /* Which guest this guest has privileges on */
     struct domain   *target;
 
@@ -841,6 +845,9 @@ void watchdog_domain_destroy(struct domain *d);
 
 /* This check is for functionality specific to a control domain */
 #define is_control_domain(_d) ((_d)->is_privileged)
+
+/* This check is for is allowed 1:1 mapping for domain */
+#define is_domain_allowed_11_map(_d) ((_d)->is_allowed_11_mapping)
 
 #define VM_ASSIST(d, t) (test_bit(VMASST_TYPE_ ## t, &(d)->vm_assist))
 
