@@ -2885,48 +2885,6 @@ int new_guest_cr3(mfn_t mfn)
     return rc;
 }
 
-static struct domain *get_pg_owner(domid_t domid)
-{
-    struct domain *pg_owner = NULL, *curr = current->domain;
-
-    if ( likely(domid == DOMID_SELF) )
-    {
-        pg_owner = rcu_lock_current_domain();
-        goto out;
-    }
-
-    if ( unlikely(domid == curr->domain_id) )
-    {
-        gdprintk(XENLOG_WARNING, "Cannot specify itself as foreign domain\n");
-        goto out;
-    }
-
-    switch ( domid )
-    {
-    case DOMID_IO:
-        pg_owner = rcu_lock_domain(dom_io);
-        break;
-    case DOMID_XEN:
-        pg_owner = rcu_lock_domain(dom_xen);
-        break;
-    default:
-        if ( (pg_owner = rcu_lock_domain_by_id(domid)) == NULL )
-        {
-            gdprintk(XENLOG_WARNING, "Unknown domain d%d\n", domid);
-            break;
-        }
-        break;
-    }
-
- out:
-    return pg_owner;
-}
-
-static void put_pg_owner(struct domain *pg_owner)
-{
-    rcu_unlock_domain(pg_owner);
-}
-
 static inline int vcpumask_to_pcpumask(
     struct domain *d, XEN_GUEST_HANDLE_PARAM(const_void) bmap, cpumask_t *pmask)
 {
