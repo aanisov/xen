@@ -505,6 +505,8 @@ void scrub_one_page(struct page_info *);
 int xenmem_add_to_physmap_one(struct domain *d, unsigned int space,
                               domid_t foreign_domid,
                               unsigned long idx, xen_pfn_t gpfn);
+struct domain *get_pg_owner(domid_t domid);
+void put_pg_owner(struct domain *pg_owner);
 
 /* Returns 1 on success, 0 on error, negative if the ring
  * for event propagation is full in the presence of paging */
