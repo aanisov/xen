@@ -188,12 +188,20 @@ int __init init_xen_time(void)
     return 0;
 }
 
+/* Return the number of ticks since boot */
+cycles_t get_cycles(void)
+{
+    /* return raw tick count of main timer */
+    return READ_SYSREG64(CNTPCT_EL0) - boot_count;
+}
+
 /* Return number of nanoseconds since boot */
 s_time_t get_s_time(void)
 {
-    uint64_t ticks = READ_SYSREG64(CNTPCT_EL0) - boot_count;
+    cycles_t ticks = get_cycles();
     return ticks_to_ns(ticks);
 }
+
 
 /* Set the timer to wake us up at a particular time.
  * Timeout is a Xen system time (nanoseconds since boot); 0 disables the timer.
