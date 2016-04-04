@@ -379,10 +379,27 @@ mfn_t p2m_lookup(struct domain *d, gfn_t gfn, p2m_type_t *t)
     mfn_t ret;
     struct p2m_domain *p2m = p2m_get_hostp2m(d);
 
-    p2m_read_lock(p2m);
-    ret = p2m_get_entry(p2m, gfn, t, NULL, NULL);
-    p2m_read_unlock(p2m);
-
+    if(DOMID_XEN != d->domain_id)
+    {
+        p2m_read_lock(p2m);
+        ret = p2m_get_entry(p2m, gfn, t, NULL, NULL);
+        p2m_read_unlock(p2m);
+    }
+    else
+    {
+        /* retrieve the page to determine read/write or read only mapping */
+        if (mfn_valid(gfn))
+        {
+            struct page_info *page = mfn_to_page(gfn);
+            *t = (page->u.inuse.type_info == PGT_writable_page ? 
+                                p2m_ram_rw : p2m_ram_ro);
+        }
+        else
+        {
+            *t = p2m_invalid;
+        }
+        ret = gfn;
+    }
     return ret;
 }
 
