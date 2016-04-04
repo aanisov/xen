@@ -1099,7 +1099,8 @@ int xenmem_add_to_physmap_one(
     {
         struct domain *od;
         p2m_type_t p2mt;
-        od = rcu_lock_domain_by_any_id(foreign_domid);
+        od = get_pg_owner(foreign_domid);
+
         if ( od == NULL )
             return -ESRCH;
 
