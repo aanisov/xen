@@ -5,12 +5,8 @@
     DT_MATCH_COMPATIBLE("arm,armv7-timer"), \
     DT_MATCH_COMPATIBLE("arm,armv8-timer")
 
-typedef unsigned long cycles_t;
-
-static inline cycles_t get_cycles (void)
-{
-        return 0;
-}
+/* Tick count type */
+typedef uint64_t cycles_t;
 
 /* List of timer's IRQ */
 enum timer_ppi
@@ -36,6 +32,9 @@ extern void init_timer_interrupt(void);
 
 /* Counter value at boot time */
 extern uint64_t boot_count;
+
+/* Get raw system tick count */
+cycles_t get_cycles(void);
 
 extern s_time_t ticks_to_ns(uint64_t ticks);
 extern uint64_t ns_to_ticks(s_time_t ns);
