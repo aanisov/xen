@@ -61,6 +61,10 @@ int main(int argc, char **argv)
 	    err(1, "strtoul");
     }
 
+    ret = ioctl(fd, WDIOC_SETTIMEOUT, &t);
+    if (ret < 0)
+	err(1, "xenwatchdogd: Failed to set timeout\n");
+
     for (;;) {
 	ret = ioctl(fd, WDIOC_KEEPALIVE);
 	if (ret)
