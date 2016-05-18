@@ -45,6 +45,8 @@
  */
 #define XENKBD_TYPE_POS     4
 
+#define XENKBD_TYPE_RAW     5
+
 struct xenkbd_motion
 {
     uint8_t type;        /* XENKBD_TYPE_MOTION */
@@ -68,6 +70,13 @@ struct xenkbd_position
     int32_t rel_z;       /* relative Z motion (wheel) */
 };
 
+struct xenkbd_raw {
+    uint8_t type;        /* XENKBD_TYPE_RAW */
+    uint16_t input_type;
+    uint16_t code;
+    int32_t value;
+};
+
 #define XENKBD_IN_EVENT_SIZE 40
 
 union xenkbd_in_event
@@ -76,6 +85,7 @@ union xenkbd_in_event
     struct xenkbd_motion motion;
     struct xenkbd_key key;
     struct xenkbd_position pos;
+    struct xenkbd_raw raw;
     char pad[XENKBD_IN_EVENT_SIZE];
 };
 
