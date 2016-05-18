@@ -475,7 +475,11 @@ static void init_pdx(void)
 #ifdef CONFIG_ARM_32
 static void __init setup_mm(unsigned long dtb_paddr, size_t dtb_size)
 {
+#ifdef ARM32_XENHEAP_IN_LOWMEM
+    paddr_t ram_start, ram_end, ram_size, dma32_end;
+#else
     paddr_t ram_start, ram_end, ram_size;
+#endif
     paddr_t s, e;
     unsigned long ram_pages;
     unsigned long heap_pages, xenheap_pages, domheap_pages;
@@ -492,6 +496,9 @@ static void __init setup_mm(unsigned long dtb_paddr, size_t dtb_size)
     ram_start = bootinfo.mem.bank[0].start;
     ram_size  = bootinfo.mem.bank[0].size;
     ram_end   = ram_start + ram_size;
+#ifdef ARM32_XENHEAP_IN_LOWMEM
+    dma32_end = ram_end > 0x100000000ULL ? 0 : ram_end;
+#endif
 
     for ( i = 1; i < bootinfo.mem.nr_banks; i++ )
     {
@@ -502,6 +509,9 @@ static void __init setup_mm(unsigned long dtb_paddr, size_t dtb_size)
         ram_size  = ram_size + bank_size;
         ram_start = min(ram_start,bank_start);
         ram_end   = max(ram_end,bank_end);
+#ifdef ARM32_XENHEAP_IN_LOWMEM
+        dma32_end = bank_end > 0x100000000ULL ? dma32_end : bank_end;
+#endif
     }
 
     total_pages = ram_pages = ram_size >> PAGE_SHIFT;
@@ -530,7 +540,11 @@ static void __init setup_mm(unsigned long dtb_paddr, size_t dtb_size)
 
     do
     {
+#ifdef ARM32_XENHEAP_IN_LOWMEM
+        e = consider_modules(ram_start, dma32_end,
+#else
         e = consider_modules(ram_start, ram_end,
+#endif
                              pfn_to_paddr(xenheap_pages),
                              32<<20, 0);
         if ( e )
