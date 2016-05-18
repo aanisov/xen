@@ -1718,6 +1718,9 @@ int assign_pages(
     return -1;
 }
 
+#ifdef ARM32_SEPAR_MEM_SPLIT
+#define ZONE_4G (20) /* flsl(4G) - PAGE_SHIFT */
+#endif
 
 struct page_info *alloc_domheap_pages_pfn(
     struct domain *d, unsigned int order, unsigned int memflags, xen_pfn_t pfn)
@@ -1739,11 +1742,31 @@ struct page_info *alloc_domheap_pages_pfn(
     if ( dma_bitsize && ((dma_zone = bits_to_zone(dma_bitsize)) < zone_hi) )
         pg = alloc_heap_pages_pfn(dma_zone + 1, zone_hi, order, memflags, d, pfn);
 
+#ifdef ARM32_SEPAR_MEM_SPLIT
+    if ( pg == NULL) {
+        unsigned int low = MEMZONE_XEN + 1;
+        unsigned int high = zone_hi;
+
+        if ( memflags & MEMF_no_dma )
+            return NULL;
+
+       if ( memflags & MEMF_only_low_mem )
+           high = ZONE_4G;
+
+       if ( memflags & MEMF_only_high_mem )
+           low = ZONE_4G;
+
+        if ( (pg = alloc_heap_pages_pfn(low, high, order,
+                                   memflags, d, pfn)) == NULL )
+            return NULL;
+    }
+#else
     if ( (pg == NULL) &&
          ((memflags & MEMF_no_dma) ||
           ((pg = alloc_heap_pages_pfn(MEMZONE_XEN + 1, zone_hi, order,
                                   memflags, d, pfn)) == NULL)) )
          return NULL;
+#endif
 
     if ( d && !(memflags & MEMF_no_owner) &&
          assign_pages(d, pg, order, memflags) )

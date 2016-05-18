@@ -54,8 +54,13 @@ static int build(xc_interface *xch, int argc, char** argv)
 	if (rv) goto err;
 	rv = xc_dom_parse_image(dom);
 	if (rv) goto err;
+#ifndef ARM32_SEPAR_MEM_SPLIT
 	rv = xc_dom_mem_init(dom, maxmem);
 	if (rv) goto err;
+#else
+	rv = xc_dom_mem_init(dom, maxmem, 0);
+	if (rv) goto err;
+#endif
 	rv = xc_dom_boot_mem_init(dom);
 	if (rv) goto err;
 	rv = xc_dom_build_image(dom);

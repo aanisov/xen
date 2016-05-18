@@ -177,6 +177,12 @@ struct npfec {
 #define _MEMF_exact_node  4
 #define  MEMF_exact_node  (1U<<_MEMF_exact_node)
 #define _MEMF_no_owner    5
+#ifdef ARM32_SEPAR_MEM_SPLIT
+#define _MEMF_only_low_mem    6
+#define  MEMF_only_low_mem    (1U<<_MEMF_only_low_mem)
+#define _MEMF_only_high_mem   7
+#define  MEMF_only_high_mem   (1U<<_MEMF_only_high_mem)
+#endif
 #define  MEMF_no_owner    (1U<<_MEMF_no_owner)
 #define _MEMF_node        8
 #define  MEMF_node_mask   ((1U << (8 * sizeof(nodeid_t))) - 1)

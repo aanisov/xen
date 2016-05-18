@@ -112,6 +112,8 @@ CFLAGS   += -I. -I./include $(CFLAGS_xeninclude)
 # Needed for posix_fadvise64() in xc_linux.c
 CFLAGS-$(CONFIG_Linux) += -D_GNU_SOURCE
 
+CFLAGS-$(ARM32_SEPAR_MEM_SPLIT) += -DARM32_SEPAR_MEM_SPLIT
+
 CFLAGS	+= $(PTHREAD_CFLAGS)
 
 CTRL_LIB_OBJS := $(patsubst %.c,%.o,$(CTRL_SRCS-y))

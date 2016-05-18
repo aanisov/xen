@@ -1350,6 +1350,11 @@ static void parse_config_data(const char *config_source,
     if (!xlu_cfg_get_long (config, "memory", &l, 0))
         b_info->target_memkb = l * 1024;
 
+#ifdef ARM32_SEPAR_MEM_SPLIT
+    if (!xlu_cfg_get_long (config, "memory_high", &l, 0))
+        b_info->target_memkb_high = l * 1024;
+#endif
+
     if (!xlu_cfg_get_long (config, "maxmem", &l, 0))
         b_info->max_memkb = l * 1024;
 

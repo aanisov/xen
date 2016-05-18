@@ -53,8 +53,13 @@ static int xc_linux_build_internal(struct xc_dom_image *dom,
         goto out;
     if ( (rc = xc_dom_parse_image(dom)) != 0 )
         goto out;
+#ifndef ARM32_SEPAR_MEM_SPLIT
     if ( (rc = xc_dom_mem_init(dom, mem_mb)) != 0 )
         goto out;
+#else
+    if ( (rc = xc_dom_mem_init(dom, mem_mb, 0)) != 0 )
+        goto out;
+#endif
     if ( (rc = xc_dom_boot_mem_init(dom)) != 0 )
         goto out;
     if ( (rc = xc_dom_build_image(dom)) != 0 )

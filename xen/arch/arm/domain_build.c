@@ -349,6 +349,7 @@ static void allocate_memory_11(struct domain *d, struct kernel_info *kinfo)
     paddr_t mem_size = kinfo->unassigned_mem;
 #else
     unsigned int order = get_11_allocation_size(kinfo->unassigned_mem.low);
+    paddr_t mem_size = kinfo->unassigned_mem.low;
 #endif
     int i;
 
@@ -457,9 +458,12 @@ static void allocate_memory_11(struct domain *d, struct kernel_info *kinfo)
                (unsigned long)kinfo->unassigned_mem >> 20);
 #else
     order = get_11_allocation_size(kinfo->unassigned_mem.low);
+    if ( opt_dom0_rambase_pfn )
+        rambase_pfn += (mem_size - kinfo->unassigned_mem.low) >> PAGE_SHIFT;
+
     while ( kinfo->unassigned_mem.low && kinfo->mem.nr_banks < NR_MEM_BANKS )
     {
-        pg = alloc_domheap_pages(d, order, lowmem ? MEMF_bits(32) : 0);
+        pg = alloc_domheap_pages_pfn(d, order, lowmem ? MEMF_bits(32) : 0, rambase_pfn);
         if ( !pg )
         {
             order --;
@@ -503,6 +507,11 @@ static void allocate_memory_11(struct domain *d, struct kernel_info *kinfo)
          * allocation possible.
          */
         order = get_11_allocation_size(kinfo->unassigned_mem.low);
+        if ( opt_dom0_rambase_pfn )
+        {
+            rambase_pfn += (mem_size - kinfo->unassigned_mem.low) >> PAGE_SHIFT;
+            mem_size = kinfo->unassigned_mem.low;
+        }
     }
 
     if ( kinfo->unassigned_mem.low )

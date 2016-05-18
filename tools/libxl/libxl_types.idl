@@ -414,6 +414,7 @@ libxl_domain_build_info = Struct("domain_build_info",[
     ("tsc_mode",        libxl_tsc_mode),
     ("max_memkb",       MemKB),
     ("target_memkb",    MemKB),
+    ("target_memkb_high",  MemKB, {'init_val': '0'}),
     ("video_memkb",     MemKB),
     ("shadow_memkb",    MemKB),
     ("rambase",         uint64, {'init_val': 'LIBXL_INVALID_RAM_BASE'}),

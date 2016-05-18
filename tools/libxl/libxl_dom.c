@@ -402,11 +402,19 @@ int libxl__build_pre(libxl__gc *gc, uint32_t domid,
         }
     }
 
+#ifndef ARM32_SEPAR_MEM_SPLIT
     if (xc_domain_setmaxmem(ctx->xch, domid, info->target_memkb +
         LIBXL_MAXMEM_CONSTANT) < 0) {
         LIBXL__LOG_ERRNO(ctx, LIBXL__LOG_ERROR, "Couldn't set max memory");
         return ERROR_FAIL;
     }
+#else
+    if (xc_domain_setmaxmem(ctx->xch, domid, info->target_memkb + info->target_memkb_high +
+        LIBXL_MAXMEM_CONSTANT) < 0) {
+        LIBXL__LOG_ERRNO(ctx, LIBXL__LOG_ERROR, "Couldn't set max memory");
+        return ERROR_FAIL;
+    }
+#endif
 
     xs_domid = xs_read(ctx->xsh, XBT_NULL, "/tool/xenstored/domid", NULL);
     state->store_domid = xs_domid ? atoi(xs_domid) : 0;
@@ -525,11 +533,19 @@ int libxl__build_post(libxl__gc *gc, uint32_t domid,
         ? LIBXL_MAXMEM_CONSTANT : 0;
 
     ents = libxl__calloc(gc, 12 + (info->max_vcpus * 2) + 2, sizeof(char *));
+#ifndef ARM32_SEPAR_MEM_SPLIT
     ents[0] = "memory/static-max";
     ents[1] = GCSPRINTF("%"PRId64, info->max_memkb);
     ents[2] = "memory/target";
     ents[3] = GCSPRINTF("%"PRId64, info->target_memkb - info->video_memkb
                         - mem_target_fudge);
+#else
+    ents[0] = "memory/static-max";
+    ents[1] = GCSPRINTF("%"PRId64, info->max_memkb + info->target_memkb_high);
+    ents[2] = "memory/target";
+    ents[3] = GCSPRINTF("%"PRId64, info->target_memkb + info->target_memkb_high - info->video_memkb
+                        - mem_target_fudge);
+#endif
     ents[4] = "memory/videoram";
     ents[5] = GCSPRINTF("%"PRId64, info->video_memkb);
     ents[6] = "domid";
@@ -717,10 +733,17 @@ int libxl__build_pv(libxl__gc *gc, uint32_t domid,
         LOGE(ERROR, "libxl__arch_domain_init_hw_description failed");
         goto out;
     }
+#ifndef ARM32_SEPAR_MEM_SPLIT
     if ( (ret = xc_dom_mem_init(dom, info->target_memkb / 1024)) != 0 ) {
         LOGE(ERROR, "xc_dom_mem_init failed");
         goto out;
     }
+#else
+    if ( (ret = xc_dom_mem_init(dom, info->target_memkb / 1024, info->target_memkb_high / 1024)) != 0 ) {
+        LOGE(ERROR, "xc_dom_mem_init failed");
+        goto out;
+    }
+#endif
     if ( (ret = xc_dom_boot_mem_init(dom)) != 0 ) {
         LOGE(ERROR, "xc_dom_boot_mem_init failed");
         goto out;

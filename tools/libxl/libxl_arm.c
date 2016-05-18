@@ -916,7 +916,11 @@ int libxl__arch_domain_finalise_hw_description(libxl__gc *gc,
                                                struct xc_dom_image *dom)
 {
     void *fdt = dom->devicetree_blob;
+#ifndef ARM32_SEPAR_MEM_SPLIT
     int i;
+#else
+    uint64_t size;
+#endif
 
     uint64_t guest_rambase = (uint64_t)dom->rambase_pfn << XC_PAGE_SHIFT;
 
@@ -953,11 +957,18 @@ int libxl__arch_domain_finalise_hw_description(libxl__gc *gc,
 
     }
 
+#ifndef ARM32_SEPAR_MEM_SPLIT
     for (i = 0; i < GUEST_RAM_BANKS; i++) {
         const uint64_t size = (uint64_t)dom->rambank_size[i] << XC_PAGE_SHIFT;
 
         finalise_one_memory_node(gc, fdt, bankbase[i], size);
     }
+#else
+    size = (uint64_t)dom->rambank_size_low[0] << XC_PAGE_SHIFT;
+    finalise_one_memory_node(gc, fdt, bankbase[0], size);
+    size = (uint64_t)dom->rambank_size_high[0] << XC_PAGE_SHIFT;
+    finalise_one_memory_node(gc, fdt, bankbase[1], size);
+#endif
 
     debug_dump_fdt(gc, fdt);
 

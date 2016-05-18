@@ -169,7 +169,11 @@ static void populate_physmap(struct memop_args *a)
         }
         else
         {
-            if ( is_domain_direct_mapped(d) )
+            if ( is_domain_direct_mapped(d)
+#ifdef ARM32_SEPAR_MEM_SPLIT
+                && !(a->memflags & MEMF_only_high_mem)
+#endif
+				)
             {
                 mfn = gpfn;
 
@@ -870,6 +874,16 @@ long do_memory_op(unsigned long cmd, XEN_GUEST_HANDLE_PARAM(void) arg)
         if ( op == XENMEM_populate_physmap
              && (reservation.mem_flags & XENMEMF_populate_on_demand) )
             args.memflags |= MEMF_populate_on_demand;
+
+#ifdef ARM32_SEPAR_MEM_SPLIT
+        if ( op == XENMEM_populate_physmap
+                && ( reservation.mem_flags & XENMEMF_only_low_mem) )
+            args.memflags |= MEMF_only_low_mem;
+
+        if ( op == XENMEM_populate_physmap
+                && ( reservation.mem_flags & XENMEMF_only_high_mem) )
+            args.memflags |= MEMF_only_high_mem;
+#endif
 
         if ( xsm_memory_adjust_reservation(XSM_TARGET, current->domain, d) )
         {
