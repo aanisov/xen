@@ -31,6 +31,9 @@
 #include <xen/console.h>
 #include <asm/gic.h>
 #include <asm/psci.h>
+#ifdef ARM32_RELOCATE_OVER_4GB
+#include <xen/vmap.h>
+#endif
 
 cpumask_t cpu_online_map;
 cpumask_t cpu_present_map;
@@ -353,17 +356,33 @@ int __init cpu_up_send_sgi(int cpu)
     return 0;
 }
 
+#ifdef ARM32_RELOCATE_OVER_4GB
+extern paddr_t xen_relocation_offset;
+#endif
 /* Bring up a remote CPU */
 int __cpu_up(unsigned int cpu)
 {
     int rc;
     s_time_t deadline;
+#ifdef ARM32_RELOCATE_OVER_4GB
+    paddr_t p_info = __pa(&smp_up_cpu) - xen_relocation_offset;
+    unsigned long* info = ioremap_nocache(p_info, sizeof(unsigned long));
+#else
+    unsigned long* info = &smp_up_cpu;
+#endif
 
     printk("Bringing up CPU%d\n", cpu);
 
     rc = init_secondary_pagetables(cpu);
     if ( rc < 0 )
+#ifdef ARM32_RELOCATE_OVER_4GB
+    {
+        iounmap(info);
         return rc;
+    }
+#else
+        return rc;
+#endif
 
     console_start_sync(); /* Secondary may use early_printk */
 
@@ -374,8 +393,8 @@ int __cpu_up(unsigned int cpu)
     init_data.cpuid = cpu;
 
     /* Open the gate for this CPU */
-    smp_up_cpu = cpu_logical_map(cpu);
-    clean_dcache(smp_up_cpu);
+    *info = cpu_logical_map(cpu);
+    clean_dcache(*info);
 
     rc = arch_cpu_up(cpu);
 
@@ -383,6 +402,9 @@ int __cpu_up(unsigned int cpu)
 
     if ( rc < 0 )
     {
+#ifdef ARM32_RELOCATE_OVER_4GB
+        iounmap(info);
+#endif
         printk("Failed to bring up CPU%d\n", cpu);
         return rc;
     }
@@ -406,8 +428,11 @@ int __cpu_up(unsigned int cpu)
      */
     init_data.stack = NULL;
     init_data.cpuid = ~0;
-    smp_up_cpu = MPIDR_INVALID;
-    clean_dcache(smp_up_cpu);
+    *info = MPIDR_INVALID;
+    clean_dcache(*info);
+#ifdef ARM32_RELOCATE_OVER_4GB
+    iounmap(info);
+#endif
 
     if ( !cpu_online(cpu) )
     {

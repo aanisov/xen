@@ -1487,7 +1487,7 @@ static void __init find_gnttab_region(struct domain *d,
     if ( (kinfo->gnttab_size >> PAGE_SHIFT) < max_grant_frames )
         panic("Cannot find a space for the grant table region\n");
 
-#ifdef CONFIG_ARM_32
+#if defined(CONFIG_ARM_32) && !defined(ARM32_RELOCATE_OVER_4GB)
     /*
      * The gnttab region must be under 4GB in order to work with DOM0
      * using short page table.

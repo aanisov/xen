@@ -262,8 +262,21 @@ cpu_init_done:
         add   r4, r4, r10            /* r4 := paddr (boot_pagetable) */
         mov   r5, #0                 /* r4:r5 is paddr (boot_pagetable) */
         mcrr  CP64(r4, r5, HTTBR)
+#ifdef ARM32_RELOCATE_OVER_4GB
+        teq   r7, #0
+        beq   1f                     /* construct pagetable if CPU0 */
 
-        /* Setup boot_pgtable: */
+        /*Skip constructing TLBs for secondary CPUs, use constracted by CPU0*/
+        PRINT("- Skip construction pagetable, using CPU0 table @")
+        mov   r0, r5
+        bl    putn
+        mov   r0, r4
+        bl    putn
+        PRINT("  -\r\n")
+        bne   skip_constructing
+#endif
+
+1:      /* Setup boot_pgtable: */
         ldr   r1, =boot_second
         add   r1, r1, r10            /* r1 := paddr (boot_second) */
 
@@ -346,6 +359,7 @@ virtphys_clash:
         PRINT("- Unable to build boot page tables - virt and phys addresses clash. -\r\n")
         b     fail
 
+skip_constructing:
 1:
         PRINT("- Turning on paging -\r\n")
 
@@ -427,6 +441,11 @@ paging:
          * setup in init_secondary_pagetables. */
 
         ldr   r4, =init_ttbr         /* VA of HTTBR value stashed by CPU 0 */
+#ifdef ARM32_RELOCATE_OVER_4GB
+        ldr   r1, =_start
+        sub r4, r1
+        add r4, #BOOT_RELOC_VIRT_START
+#endif
         ldrd  r4, r5, [r4]           /* Actual value */
         dsb
         mcrr  CP64(r4, r5, HTTBR)

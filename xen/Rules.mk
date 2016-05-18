@@ -64,6 +64,7 @@ CFLAGS-$(HAS_PCI)       += -DHAS_PCI
 CFLAGS-$(HAS_IOPORTS)   += -DHAS_IOPORTS
 CFLAGS-$(HAS_PDX)       += -DHAS_PDX
 CFLAGS-$(frame_pointer) += -fno-omit-frame-pointer -DCONFIG_FRAME_POINTER
+CFLAGS-$(ARM32_RELOCATE_OVER_4GB) += -DARM32_RELOCATE_OVER_4GB
 
 ifneq ($(max_phys_cpus),)
 CFLAGS-y                += -DMAX_PHYS_CPUS=$(max_phys_cpus)

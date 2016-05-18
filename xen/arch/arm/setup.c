@@ -394,9 +394,13 @@ static paddr_t __init get_xen_paddr(void)
         const struct membank *bank = &mi->bank[i];
         paddr_t s, e;
 
+        //TODO: investigate reason why we need contiguous memory
+        //and how it can affect relocation of Xen in over 4GB space
+#ifndef ARM32_RELOCATE_OVER_4GB
         /* We can only deal with contiguous memory at the moment */
         if ( last_end != bank->start )
             break;
+#endif
 
         last_end = bank->start + bank->size;
 
@@ -407,7 +411,7 @@ static paddr_t __init get_xen_paddr(void)
             if ( !e )
                 continue;
 
-#ifdef CONFIG_ARM_32
+#if defined (CONFIG_ARM_32) && !defined(ARM32_RELOCATE_OVER_4GB)
             /* Xen must be under 4GB */
             if ( e > 0x100000000ULL )
                 e = 0x100000000ULL;
@@ -698,6 +702,9 @@ void __init setup_cache(void)
     cacheline_bytes = 1U << (4 + (ccsid & 0x7));
 }
 
+#ifdef ARM32_RELOCATE_OVER_4GB
+paddr_t xen_relocation_offset;
+#endif
 /* C entry point for boot CPU */
 void __init start_xen(unsigned long boot_phys_offset,
                       unsigned long fdt_paddr,
@@ -739,8 +746,20 @@ void __init start_xen(unsigned long boot_phys_offset,
                              (paddr_t)(uintptr_t)(_end - _start + 1), NULL);
     BUG_ON(!xen_bootmodule);
 
+#ifdef ARM32_RELOCATE_OVER_4GB
+    //save physical address of init_secondary
+    xen_relocation_offset = __pa(init_secondary);
+#endif
     xen_paddr = get_xen_paddr();
     setup_pagetables(boot_phys_offset, xen_paddr);
+#ifdef ARM32_RELOCATE_OVER_4GB
+    //Now Xen is relocated
+    //Calculate offset of Xen relocation
+    //It is difference between new physical address of init_secondary an old one
+    //This offset is needed in several places when we have to write to old Xen location
+    //(secondary CPUs run on old-located Xen and rely on some variables from CPU0)
+    xen_relocation_offset = __pa(init_secondary) - xen_relocation_offset;
+#endif
 
     /* Update Xen's address now that we have relocated. */
     printk("Update BOOTMOD_XEN from %"PRIpaddr"-%"PRIpaddr" => %"PRIpaddr"-%"PRIpaddr"\n",

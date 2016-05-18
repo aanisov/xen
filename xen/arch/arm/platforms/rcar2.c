@@ -25,6 +25,9 @@
 #define RCAR2_RAM_SIZE                         0x1000
 #define RCAR2_SMP_START_OFFSET                 0xFFC
 
+#ifdef ARM32_RELOCATE_OVER_4GB
+extern paddr_t xen_relocation_offset;
+#endif
 static int __init rcar2_smp_init(void)
 {
     void __iomem *pram;
@@ -38,7 +41,11 @@ static int __init rcar2_smp_init(void)
     }
 
     /* setup reset vectors */
-    writel(__pa(init_secondary), pram + RCAR2_SMP_START_OFFSET);
+    writel(__pa(init_secondary)
+#ifdef ARM32_RELOCATE_OVER_4GB
+            - xen_relocation_offset
+#endif
+            , pram + RCAR2_SMP_START_OFFSET);
     iounmap(pram);
 
     sev();
