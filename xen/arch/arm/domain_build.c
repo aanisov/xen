@@ -27,6 +27,9 @@
 static unsigned int __initdata opt_dom0_max_vcpus;
 integer_param("dom0_max_vcpus", opt_dom0_max_vcpus);
 
+static u64 __initdata opt_dom0_rambase_pfn = 0;
+integer_param("dom0_rambase_pfn", opt_dom0_rambase_pfn);
+
 int dom0_11_mapping = 1;
 
 #define DOM0_MEM_DEFAULT 0x8000000 /* 128 MiB */
@@ -248,6 +251,8 @@ static void allocate_memory_11(struct domain *d, struct kernel_info *kinfo)
     const unsigned int min_order = get_order_from_bytes(MB(4));
     struct page_info *pg;
     unsigned int order = get_11_allocation_size(kinfo->unassigned_mem);
+    u64 rambase_pfn = opt_dom0_rambase_pfn;
+    paddr_t mem_size = kinfo->unassigned_mem;
     int i;
 
     bool_t lowmem = is_32bit_domain(d);
@@ -267,7 +272,7 @@ static void allocate_memory_11(struct domain *d, struct kernel_info *kinfo)
     {
         for ( bits = order ; bits <= (lowmem ? 32 : PADDR_BITS); bits++ )
         {
-            pg = alloc_domheap_pages(d, order, MEMF_bits(bits));
+            pg = alloc_domheap_pages_pfn(d, order, MEMF_bits(bits), rambase_pfn);
             if ( pg != NULL )
                 goto got_bank0;
         }
@@ -284,16 +289,21 @@ static void allocate_memory_11(struct domain *d, struct kernel_info *kinfo)
     /* Now allocate more memory and fill in additional banks */
 
     order = get_11_allocation_size(kinfo->unassigned_mem);
+    if ( opt_dom0_rambase_pfn )
+        rambase_pfn += (mem_size - kinfo->unassigned_mem) >> PAGE_SHIFT;
+
     while ( kinfo->unassigned_mem && kinfo->mem.nr_banks < NR_MEM_BANKS )
     {
-        pg = alloc_domheap_pages(d, order, lowmem ? MEMF_bits(32) : 0);
+        pg = alloc_domheap_pages_pfn(d, order, lowmem ? MEMF_bits(32) : 0,
+                                     rambase_pfn);
         if ( !pg )
         {
             order --;
 
             if ( lowmem && order < min_low_order)
             {
-                D11PRINT("Failed at min_low_order, allow high allocations\n");
+                if ( !opt_dom0_rambase_pfn )
+                    D11PRINT("Failed at min_low_order, allow high allocations\n");
                 order = get_11_allocation_size(kinfo->unassigned_mem);
                 lowmem = false;
                 continue;
@@ -313,7 +323,8 @@ static void allocate_memory_11(struct domain *d, struct kernel_info *kinfo)
 
             if ( lowmem )
             {
-                D11PRINT("Allocation below bank 0, allow high allocations\n");
+                if ( !opt_dom0_rambase_pfn )
+                    D11PRINT("Allocation below bank 0, allow high allocations\n");
                 order = get_11_allocation_size(kinfo->unassigned_mem);
                 lowmem = false;
                 continue;
@@ -330,6 +341,11 @@ static void allocate_memory_11(struct domain *d, struct kernel_info *kinfo)
          * allocation possible.
          */
         order = get_11_allocation_size(kinfo->unassigned_mem);
+        if ( opt_dom0_rambase_pfn )
+        {
+            rambase_pfn += (mem_size - kinfo->unassigned_mem) >> PAGE_SHIFT;
+            mem_size = kinfo->unassigned_mem;
+        }
     }
 
     if ( kinfo->unassigned_mem )

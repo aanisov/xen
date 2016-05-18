@@ -583,16 +583,17 @@ static void check_low_mem_virq(void)
     }
 }
 
-/* Allocate 2^@order contiguous pages. */
-static struct page_info *alloc_heap_pages(
+/* Allocate 2^@order contiguous pages at given pfn. */
+static struct page_info *alloc_heap_pages_pfn(
     unsigned int zone_lo, unsigned int zone_hi,
     unsigned int order, unsigned int memflags,
-    struct domain *d)
+    struct domain *d, xen_pfn_t pfn)
 {
     unsigned int i, j, zone = 0, nodemask_retry = 0;
     nodeid_t first_node, node = MEMF_get_node(memflags), req_node = node;
     unsigned long request = 1UL << order;
-    struct page_info *pg;
+    struct page_info *pg, *tmp_pg;
+    struct page_list_head *pg_list;
     nodemask_t nodemask = (d != NULL ) ? d->node_affinity : node_online_map;
     bool_t need_tlbflush = 0;
     uint32_t tlbflush_timestamp = 0;
@@ -657,9 +658,25 @@ static struct page_info *alloc_heap_pages(
                 continue;
 
             /* Find smallest order which can satisfy the request. */
-            for ( j = order; j <= MAX_ORDER; j++ )
-                if ( (pg = page_list_remove_head(&heap(node, zone, j))) )
-                    goto found;
+            for ( j = order; j <= MAX_ORDER; j++ ) {
+                pg_list = &heap(node, zone, j);
+                if ( pfn )
+                {
+                    page_list_for_each_safe( pg, tmp_pg, pg_list )
+                    {
+                        if ( pfn == page_to_mfn(pg) )
+                        {
+                            page_list_del(pg, pg_list);
+                            goto found;
+                        }
+                    }
+                }
+                else
+                {
+                    if ( (pg = page_list_remove_head(pg_list)) )
+                        goto found;
+                }
+            }
         } while ( zone-- > zone_lo ); /* careful: unsigned zone may wrap */
 
         if ( (memflags & MEMF_exact_node) && req_node != NUMA_NO_NODE )
@@ -706,9 +723,15 @@ static struct page_info *alloc_heap_pages(
     /* We may have to halve the chunk a number of times. */
     while ( j != order )
     {
-        PFN_ORDER(pg) = --j;
-        page_list_add_tail(pg, &heap(node, zone, j));
-        pg += 1 << j;
+        tmp_pg = pg;
+        if ( pfn )
+            tmp_pg += 1 << (j - 1);
+
+        PFN_ORDER(tmp_pg) = --j;
+        page_list_add_tail(tmp_pg, &heap(node, zone, j));
+
+        if ( !pfn )
+            pg += 1 << j;
     }
 
     ASSERT(avail[node][zone] >= request);
@@ -760,6 +783,15 @@ static struct page_info *alloc_heap_pages(
     }
 
     return pg;
+}
+
+/* Allocate 2^@order contiguous pages. */
+static struct page_info *alloc_heap_pages(
+    unsigned int zone_lo, unsigned int zone_hi,
+    unsigned int order, unsigned int memflags,
+    struct domain *d)
+{
+    return alloc_heap_pages_pfn(zone_lo, zone_hi, order, memflags, d, 0);
 }
 
 /* Remove any offlined page in the buddy pointed to by head. */
@@ -1687,8 +1719,8 @@ int assign_pages(
 }
 
 
-struct page_info *alloc_domheap_pages(
-    struct domain *d, unsigned int order, unsigned int memflags)
+struct page_info *alloc_domheap_pages_pfn(
+    struct domain *d, unsigned int order, unsigned int memflags, xen_pfn_t pfn)
 {
     struct page_info *pg = NULL;
     unsigned int bits = memflags >> _MEMF_bits, zone_hi = NR_ZONES - 1;
@@ -1705,12 +1737,12 @@ struct page_info *alloc_domheap_pages(
         memflags |= MEMF_no_refcount;
 
     if ( dma_bitsize && ((dma_zone = bits_to_zone(dma_bitsize)) < zone_hi) )
-        pg = alloc_heap_pages(dma_zone + 1, zone_hi, order, memflags, d);
+        pg = alloc_heap_pages_pfn(dma_zone + 1, zone_hi, order, memflags, d, pfn);
 
     if ( (pg == NULL) &&
          ((memflags & MEMF_no_dma) ||
-          ((pg = alloc_heap_pages(MEMZONE_XEN + 1, zone_hi, order,
-                                  memflags, d)) == NULL)) )
+          ((pg = alloc_heap_pages_pfn(MEMZONE_XEN + 1, zone_hi, order,
+                                  memflags, d, pfn)) == NULL)) )
          return NULL;
 
     if ( d && !(memflags & MEMF_no_owner) &&
@@ -1721,6 +1753,12 @@ struct page_info *alloc_domheap_pages(
     }
     
     return pg;
+}
+
+struct page_info *alloc_domheap_pages(
+    struct domain *d, unsigned int order, unsigned int memflags)
+{
+    return alloc_domheap_pages_pfn(d, order, memflags, 0);
 }
 
 void free_domheap_pages(struct page_info *pg, unsigned int order)
