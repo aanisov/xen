@@ -16,7 +16,16 @@ struct kernel_info {
 #endif
 
     void *fdt; /* flat device tree */
+
+#ifndef ARM32_SEPAR_MEM_SPLIT
     paddr_t unassigned_mem; /* RAM not (yet) assigned to a bank */
+#else
+    struct {
+        paddr_t low; /* Low RAM not (yet) assigned to a bank */
+        paddr_t high; /* High RAM not (yet) assigned to a bank */
+    } unassigned_mem;
+#endif
+
     struct meminfo mem;
 
     /* kernel entry point */

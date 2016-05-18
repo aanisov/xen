@@ -35,6 +35,11 @@ int dom0_11_mapping = 1;
 #define DOM0_MEM_DEFAULT 0x8000000 /* 128 MiB */
 static u64 __initdata dom0_mem = DOM0_MEM_DEFAULT;
 
+#ifdef ARM32_SEPAR_MEM_SPLIT
+#define DOM0_MEM_HIGH_DEFAULT 0x0 /* 0 MiB */
+static u64 __initdata dom0_mem_high = DOM0_MEM_HIGH_DEFAULT;
+#endif
+
 static void __init parse_dom0_mem(const char *s)
 {
     dom0_mem = parse_size_and_unit(s, &s);
@@ -42,6 +47,14 @@ static void __init parse_dom0_mem(const char *s)
         dom0_mem = DOM0_MEM_DEFAULT;
 }
 custom_param("dom0_mem", parse_dom0_mem);
+
+#ifdef ARM32_SEPAR_MEM_SPLIT
+static void __init parse_dom0_mem_high(const char *s)
+{
+    dom0_mem_high = parse_size_and_unit(s, &s);
+}
+custom_param("dom0_mem_high", parse_dom0_mem_high);
+#endif
 
 //#define DEBUG_DT
 
@@ -130,7 +143,11 @@ static bool_t insert_11_bank(struct domain *d,
     if ( res )
         panic("Failed map pages to DOM0: %d", res);
 
+#ifndef ARM32_SEPAR_MEM_SPLIT
     kinfo->unassigned_mem -= size;
+#else
+    kinfo->unassigned_mem.low -= size;
+#endif
 
     if ( kinfo->mem.nr_banks == 0 )
     {
@@ -192,6 +209,82 @@ fail:
     return false;
 }
 
+#ifdef ARM32_SEPAR_MEM_SPLIT
+static void allocate_dom0_high_memory(struct domain *d, struct kernel_info *kinfo)
+{
+    int i, res, st_banks = kinfo->mem.nr_banks;
+    struct page_info *pg = NULL;
+    int bits;
+    unsigned int order = get_11_allocation_size(dom0_mem_high);
+    const unsigned int min_order = get_order_from_bytes(MB(4));
+    paddr_t spfn;
+    paddr_t start, size;
+    struct membank *bank = NULL;
+
+    if (dom0_mem_high == 0)
+        return;
+
+    printk("Allocating %ldMB of high memory region for dom0\n",
+            (unsigned long)(dom0_mem_high >> 20));
+
+    while ( kinfo->unassigned_mem.high && kinfo->mem.nr_banks < NR_MEM_BANKS )
+    {
+        for (bits = PADDR_BITS ; bits >= min_order; bits-- )
+        {
+            pg = alloc_domheap_pages(d, order, MEMF_bits(bits));
+            if ( pg != NULL )
+                break;
+        }
+
+        if ( !pg )
+        {
+            order --;
+            if ( order >= min_order )
+                continue;
+
+            /* No more we can do */
+            break;
+        }
+
+        spfn = page_to_mfn(pg);
+        start = pfn_to_paddr(spfn);
+        size = pfn_to_paddr((1 << order));
+
+        res = guest_physmap_add_page(d, spfn, spfn, order);
+        if ( res )
+            panic("Failed map pages to DOM0: %d", res);
+
+        kinfo->unassigned_mem.high -= size;
+
+        bank = &kinfo->mem.bank[kinfo->mem.nr_banks];
+
+        bank->start = start;
+        bank->size = size;
+        kinfo->mem.nr_banks++;
+
+        /*
+         * Success, next time around try again to get the largest order
+         * allocation possible.
+         */
+
+        order = get_11_allocation_size(kinfo->unassigned_mem.high);
+     }
+
+    if(kinfo->unassigned_mem.high)
+        panic("Unable to allocate high memory bank");
+
+    for( i = st_banks; i < kinfo->mem.nr_banks; i++ )
+    {
+        printk("BANK[%d] %#"PRIpaddr"-%#"PRIpaddr" (%ldMB)\n",
+               i,
+               kinfo->mem.bank[i].start,
+               kinfo->mem.bank[i].start + kinfo->mem.bank[i].size,
+               /* Don't want format this as PRIpaddr (16 digit hex) */
+               (unsigned long)(kinfo->mem.bank[i].size >> 20));
+    }
+}
+#endif
+
 /*
  * This is all pretty horrible.
  *
@@ -250,9 +343,13 @@ static void allocate_memory_11(struct domain *d, struct kernel_info *kinfo)
         get_11_allocation_size(min_t(paddr_t, dom0_mem, MB(128)));
     const unsigned int min_order = get_order_from_bytes(MB(4));
     struct page_info *pg;
-    unsigned int order = get_11_allocation_size(kinfo->unassigned_mem);
     u64 rambase_pfn = opt_dom0_rambase_pfn;
+#ifndef ARM32_SEPAR_MEM_SPLIT
+    unsigned int order = get_11_allocation_size(kinfo->unassigned_mem);
     paddr_t mem_size = kinfo->unassigned_mem;
+#else
+    unsigned int order = get_11_allocation_size(kinfo->unassigned_mem.low);
+#endif
     int i;
 
     bool_t lowmem = is_32bit_domain(d);
@@ -260,7 +357,11 @@ static void allocate_memory_11(struct domain *d, struct kernel_info *kinfo)
 
     printk("Allocating 1:1 mappings totalling %ldMB for dom0:\n",
            /* Don't want format this as PRIpaddr (16 digit hex) */
+#ifndef ARM32_SEPAR_MEM_SPLIT
            (unsigned long)(kinfo->unassigned_mem >> 20));
+#else
+           (unsigned long)(kinfo->unassigned_mem.low >> 20));
+#endif
 
     kinfo->mem.nr_banks = 0;
 
@@ -288,6 +389,7 @@ static void allocate_memory_11(struct domain *d, struct kernel_info *kinfo)
 
     /* Now allocate more memory and fill in additional banks */
 
+#ifndef ARM32_SEPAR_MEM_SPLIT
     order = get_11_allocation_size(kinfo->unassigned_mem);
     if ( opt_dom0_rambase_pfn )
         rambase_pfn += (mem_size - kinfo->unassigned_mem) >> PAGE_SHIFT;
@@ -353,7 +455,62 @@ static void allocate_memory_11(struct domain *d, struct kernel_info *kinfo)
                /* Don't want format this as PRIpaddr (16 digit hex) */
                " %ldMB unallocated\n",
                (unsigned long)kinfo->unassigned_mem >> 20);
+#else
+    order = get_11_allocation_size(kinfo->unassigned_mem.low);
+    while ( kinfo->unassigned_mem.low && kinfo->mem.nr_banks < NR_MEM_BANKS )
+    {
+        pg = alloc_domheap_pages(d, order, lowmem ? MEMF_bits(32) : 0);
+        if ( !pg )
+        {
+            order --;
 
+            if ( lowmem && order < min_low_order)
+            {
+                D11PRINT("Failed at min_low_order, allow high allocations\n");
+                order = get_11_allocation_size(kinfo->unassigned_mem.low);
+                lowmem = false;
+                continue;
+            }
+            if ( order >= min_order )
+                continue;
+
+            /* No more we can do */
+            break;
+        }
+
+        if ( !insert_11_bank(d, kinfo, pg, order) )
+        {
+            if ( kinfo->mem.nr_banks == NR_MEM_BANKS )
+                /* Nothing more we can do. */
+                break;
+
+            if ( lowmem )
+            {
+                D11PRINT("Allocation below bank 0, allow high allocations\n");
+                order = get_11_allocation_size(kinfo->unassigned_mem.low);
+                lowmem = false;
+                continue;
+            }
+            else
+            {
+                D11PRINT("Allocation below bank 0\n");
+                break;
+            }
+        }
+
+        /*
+         * Success, next time around try again to get the largest order
+         * allocation possible.
+         */
+        order = get_11_allocation_size(kinfo->unassigned_mem.low);
+    }
+
+    if ( kinfo->unassigned_mem.low )
+        printk("WARNING: Failed to allocate requested dom0 memory."
+               /* Don't want format this as PRIpaddr (16 digit hex) */
+               " %ldMB unallocated\n",
+               (unsigned long)kinfo->unassigned_mem.low >> 20);
+#endif
     for( i = 0; i < kinfo->mem.nr_banks; i++ )
     {
         printk("BANK[%d] %#"PRIpaddr"-%#"PRIpaddr" (%ldMB)\n",
@@ -374,7 +531,19 @@ static void allocate_memory(struct domain *d, struct kernel_info *kinfo)
     unsigned int bank = 0;
 
     if ( dom0_11_mapping )
+#ifndef ARM32_SEPAR_MEM_SPLIT
         return allocate_memory_11(d, kinfo);
+#else
+    {
+        allocate_memory_11(d, kinfo);
+        return allocate_dom0_high_memory(d, kinfo);
+    }
+#endif
+
+#ifdef ARM32_SEPAR_MEM_SPLIT
+    if (dom0_mem_high != 0)
+        printk("***WARNING*** We don't implement dom0_mem_high option for non 1:1 mapped domains!\n");
+#endif
 
     while ( (memory = dt_find_node_by_type(memory, "memory")) )
     {
@@ -389,7 +558,11 @@ static void allocate_memory(struct domain *d, struct kernel_info *kinfo)
             panic("Memory node has no reg property");
 
         for ( l = 0;
+#ifndef ARM32_SEPAR_MEM_SPLIT
               kinfo->unassigned_mem > 0 && l + reg_size <= reg_len
+#else
+              kinfo->unassigned_mem.low > 0 && l + reg_size <= reg_len
+#endif
                   && kinfo->mem.nr_banks < NR_MEM_BANKS;
               l += reg_size )
         {
@@ -399,8 +572,13 @@ static void allocate_memory(struct domain *d, struct kernel_info *kinfo)
                 panic("Unable to retrieve the bank %u for %s",
                       bank, dt_node_full_name(memory));
 
+#ifndef ARM32_SEPAR_MEM_SPLIT
             if ( size > kinfo->unassigned_mem )
                 size = kinfo->unassigned_mem;
+#else
+            if ( size > kinfo->unassigned_mem.low )
+                size = kinfo->unassigned_mem.low;
+#endif
 
             printk("Populate P2M %#"PRIx64"->%#"PRIx64"\n",
                    start, start + size);
@@ -410,7 +588,11 @@ static void allocate_memory(struct domain *d, struct kernel_info *kinfo)
             kinfo->mem.bank[kinfo->mem.nr_banks].size = size;
             kinfo->mem.nr_banks++;
 
+#ifndef ARM32_SEPAR_MEM_SPLIT
             kinfo->unassigned_mem -= size;
+#else
+            kinfo->unassigned_mem.low -= size;
+#endif
         }
     }
 }
@@ -1521,7 +1703,12 @@ int construct_dom0(struct domain *d)
 
     d->max_pages = ~0U;
 
+#ifndef ARM32_SEPAR_MEM_SPLIT
     kinfo.unassigned_mem = dom0_mem;
+#else
+    kinfo.unassigned_mem.low = dom0_mem;
+    kinfo.unassigned_mem.high = dom0_mem_high;
+#endif
 
     rc = kernel_probe(&kinfo);
     if ( rc < 0 )
