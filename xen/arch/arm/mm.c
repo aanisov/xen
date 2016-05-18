@@ -1150,10 +1150,43 @@ int xenmem_add_to_physmap_one(
     return rc;
 }
 
+#define MAX_P2M_ENTRIES_CNT             10000
+
+static long arch_paddr_to_maddr_batch(XEN_GUEST_HANDLE_PARAM(void) arg)
+{
+    struct xen_p2m_lookup p2mr;
+    xen_pfn_t paddr, maddr;
+    unsigned int i;
+
+    if ( copy_from_guest(&p2mr, arg, 1) )
+        return -EFAULT;
+
+    if (p2mr.count < 1 || p2mr.count > MAX_P2M_ENTRIES_CNT)
+        return -EINVAL;
+
+    if ( guest_handle_is_null(p2mr.paddrs) ||
+         guest_handle_is_null(p2mr.maddrs))
+        return -EINVAL;
+
+    for ( i = 0; i < p2mr.count; i++ )
+    {
+        if ( unlikely(__copy_from_guest_offset(&paddr, p2mr.paddrs, i, 1)) )
+            return -EFAULT;
+
+        maddr = p2m_lookup(current->domain, paddr, NULL);
+
+        if ( unlikely(__copy_to_guest_offset(p2mr.maddrs, i, &maddr, 1)) )
+            return -EFAULT;
+    }
+    return 0;
+}
+
 long arch_memory_op(int op, XEN_GUEST_HANDLE_PARAM(void) arg)
 {
     switch ( op )
     {
+    case XENMEM_p2m_lookup:
+        return arch_paddr_to_maddr_batch(arg);
     /* XXX: memsharing not working yet */
     case XENMEM_get_sharing_shared_pages:
     case XENMEM_get_sharing_freed_pages:

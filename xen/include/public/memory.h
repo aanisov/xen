@@ -608,7 +608,17 @@ struct xen_vnuma_topology_info {
 typedef struct xen_vnuma_topology_info xen_vnuma_topology_info_t;
 DEFINE_XEN_GUEST_HANDLE(xen_vnuma_topology_info_t);
 
-/* Next available subop number is 28 */
+struct xen_p2m_lookup {
+    uint32_t count;
+    XEN_GUEST_HANDLE(xen_pfn_t) paddrs; /* IN:  physical addresses */
+    XEN_GUEST_HANDLE(xen_pfn_t) maddrs; /* OUT: machine addresses */
+};
+typedef struct xen_p2m_lookup xen_p2m_lookup_t;
+DEFINE_XEN_GUEST_HANDLE(xen_p2m_lookup_t);
+
+#define XENMEM_p2m_lookup 28
+
+/* Next available subop number is 29 */
 
 #endif /* __XEN_PUBLIC_MEMORY_H__ */
 
