@@ -1,17 +1,17 @@
-
 #include <err.h>
 #include <limits.h>
-#include "xenctrl.h"
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <stdlib.h>
 #include <unistd.h>
-#include <signal.h>
 #include <stdio.h>
+#include <sys/ioctl.h>
+#include <linux/watchdog.h>
 
-xc_interface *h;
-int id = 0;
+#define DEV_NAME "/dev/watchdog"
+
+int fd = -1;
 
 void daemonize(void)
 {
@@ -36,20 +36,6 @@ void daemonize(void)
         err(1, "reopen stderr");
 }
 
-void catch_exit(int sig)
-{
-    if (id)
-        xc_watchdog(h, id, 300);
-    exit(0);
-}
-
-void catch_usr1(int sig)
-{
-    if (id)
-        xc_watchdog(h, id, 0);
-    exit(0);
-}
-
 int main(int argc, char **argv)
 {
     int t, s;
@@ -60,9 +46,9 @@ int main(int argc, char **argv)
 
     daemonize();
 
-    h = xc_interface_open(NULL, NULL, 0);
-    if (h == NULL)
-	err(1, "xc_interface_open");
+    fd = open(DEV_NAME, O_RDWR);
+    if (fd < 0)
+        err(1, "xenwatchdogd: Failed to open %s\n", DEV_NAME);
 
     t = strtoul(argv[1], NULL, 0);
     if (t == ULONG_MAX)
@@ -75,25 +61,11 @@ int main(int argc, char **argv)
 	    err(1, "strtoul");
     }
 
-    if (signal(SIGHUP, &catch_exit) == SIG_ERR)
-	err(1, "signal");
-    if (signal(SIGINT, &catch_exit) == SIG_ERR)
-	err(1, "signal");
-    if (signal(SIGQUIT, &catch_exit) == SIG_ERR)
-	err(1, "signal");
-    if (signal(SIGTERM, &catch_exit) == SIG_ERR)
-	err(1, "signal");
-    if (signal(SIGUSR1, &catch_usr1) == SIG_ERR)
-	err(1, "signal");
-
-    id = xc_watchdog(h, 0, t);
-    if (id <= 0)
-        err(1, "xc_watchdog setup");
-
     for (;;) {
+	ret = ioctl(fd, WDIOC_KEEPALIVE);
+	if (ret)
+	    err(1, "xenwatchdogd: Failed to kick watchdog\n");
+
         sleep(s);
-        ret = xc_watchdog(h, id, t);
-        if (ret != 0)
-            err(1, "xc_watchdog");
     }
 }
