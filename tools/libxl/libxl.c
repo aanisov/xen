@@ -1634,6 +1634,10 @@ void libxl__destroy_domid(libxl__egc *egc, libxl__destroy_domid_state *dis)
     dis->drs.callback = devices_destroy_cb;
     dis->drs.force = 1;
     libxl__devices_destroy(egc, &dis->drs);
+    rc = xc_domain_destroy(ctx->xch, domid);
+    if (rc < 0) {
+        LIBXL__LOG_ERRNOVAL(ctx, LIBXL__LOG_ERROR, rc, "xc_domain_destroy failed for %d", domid);
+    }
     return;
 
 out:
