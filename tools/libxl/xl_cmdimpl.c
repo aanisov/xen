@@ -2988,6 +2988,21 @@ start:
                     d_config.c_info.name = strdup(common_domname);
                 }
 
+		if (config_file) {
+		    libxl_domain_config_init(&d_config);
+
+		    ret = libxl_read_file_contents(ctx, config_file,
+						   &config_data, &config_len);
+		    if (ret) {
+			LOG("Failed to read config file: %s: %s\n",
+			    config_file, strerror(errno));
+			goto out;
+		    }
+
+		    parse_config_data(config_file, config_data, config_len,
+				      &d_config);
+		}
+
                 /*
                  * XXX FIXME: If this sleep is not there then domain
                  * re-creation fails sometimes.
