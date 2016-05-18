@@ -415,9 +415,12 @@ int arch_setup_meminit(struct xc_dom_image *dom)
     uint64_t modbase;
 
     uint64_t ramsize = (uint64_t)dom->total_pages << XC_PAGE_SHIFT;
+    uint64_t guest_rambase = (uint64_t)dom->rambase_pfn << XC_PAGE_SHIFT;
+    uint64_t guest_ramsize = (GUEST_RAM0_BASE + GUEST_RAM0_SIZE) -
+                              guest_rambase;
 
-    const uint64_t bankbase[] = GUEST_RAM_BANK_BASES;
-    const uint64_t bankmax[] = GUEST_RAM_BANK_SIZES;
+    const uint64_t bankbase[] = {guest_rambase, GUEST_RAM1_BASE};
+    const uint64_t bankmax[] = {guest_ramsize, GUEST_RAM1_SIZE};
 
     /* Convenient */
     const uint64_t kernbase = dom->kernel_seg.vstart;
@@ -433,8 +436,6 @@ int arch_setup_meminit(struct xc_dom_image *dom)
     xen_pfn_t p2m_size;
     uint64_t bank0end;
 
-    assert(dom->rambase_pfn << XC_PAGE_SHIFT == bankbase[0]);
-
     if ( modsize + kernsize > bankmax[0] )
     {
         DOMPRINTF("%s: Not enough memory for the kernel+dtb+initrd",
@@ -448,11 +449,11 @@ int arch_setup_meminit(struct xc_dom_image *dom)
         return -1;
     }
 
-    if ( ramsize > GUEST_RAM_MAX )
+    if ( ramsize > (bankmax[0] + bankmax[1]) )
     {
         DOMPRINTF("%s: ram size is too large for guest address space: "
                   "%"PRIx64" > %llx",
-                  __FUNCTION__, ramsize, GUEST_RAM_MAX);
+                  __FUNCTION__, ramsize, bankmax[0] + bankmax[1]);
         return -1;
     }
 

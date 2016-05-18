@@ -182,6 +182,11 @@ int libxl__domain_build_info_setdefault(libxl__gc *gc,
     if (b_info->target_memkb == LIBXL_MEMKB_DEFAULT)
         b_info->target_memkb = b_info->max_memkb;
 
+#ifdef GUEST_RAM_BASE
+    if (b_info->rambase == LIBXL_INVALID_RAM_BASE)
+        b_info->rambase = GUEST_RAM0_BASE;
+#endif
+
     libxl_defbool_setdefault(&b_info->claim_mode, false);
 
     libxl_defbool_setdefault(&b_info->localtime, false);

@@ -31,6 +31,7 @@
 #include <sys/select.h>
 #include <sys/utsname.h> /* for utsname in xl info */
 #include <xentoollog.h>
+#include <xenctrl.h>
 #include <ctype.h>
 #include <inttypes.h>
 #include <limits.h>
@@ -1351,6 +1352,18 @@ static void parse_config_data(const char *config_source,
 
     if (!xlu_cfg_get_long (config, "maxmem", &l, 0))
         b_info->max_memkb = l * 1024;
+
+#ifdef GUEST_RAM_BASE
+    if (!xlu_cfg_get_long (config, "rambase_pfn", &l, 0)) {
+        /* TODO add more detailed check for valid value */
+        uint64_t rambase = (uint64_t)l << XC_PAGE_SHIFT;
+        if (rambase > (GUEST_RAM0_BASE + GUEST_RAM0_SIZE)) {
+            fprintf(stderr, "ERROR: invalid value 0x%lx for \"rambase_pfn\"\n", l);
+            exit (1);
+        }
+        b_info->rambase = rambase;
+    }
+#endif
 
     if (!xlu_cfg_get_long (config, "vcpus", &l, 0)) {
         vcpus = l;
