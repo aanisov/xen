@@ -86,6 +86,10 @@ int libxl_devid_to_device_vsnd(libxl_ctx *ctx, uint32_t domid,
 int libxl_devid_to_device_vtty(libxl_ctx *ctx, uint32_t domid,
                                int devid, libxl_device_vtty *vtty);
 
+int libxl_devid_to_device_vevent(libxl_ctx *ctx, uint32_t domid,
+                                 int devid, libxl_device_vevent *vevent);
+
+
 int libxl_bitmap_alloc(libxl_ctx *ctx, libxl_bitmap *bitmap, int n_bits);
     /* Allocated bimap is from malloc, libxl_bitmap_dispose() to be
      * called by the application when done. */

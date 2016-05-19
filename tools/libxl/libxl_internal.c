@@ -551,6 +551,10 @@ void libxl__update_domain_configuration(libxl__gc *gc,
     for (i = 0; i < src->num_vsnds; i++)
         libxl__update_config_vsnd(gc, &dst->vsnds[i], &src->vsnds[i]);
 
+    /* update vevent information */
+    for (i = 0; i < src->num_vevents; i++)
+        libxl__update_config_vevent(gc, &dst->vevents[i], &src->vevents[i]);
+
     /* update guest UUID */
     libxl_uuid_copy(CTX, &dst->c_info.uuid, &src->c_info.uuid);
 

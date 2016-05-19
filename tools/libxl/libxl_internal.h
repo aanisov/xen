@@ -479,7 +479,8 @@ typedef struct {
     (dev)->backend_kind == LIBXL__DEVICE_KIND_VKBD || \
     (dev)->backend_kind == LIBXL__DEVICE_KIND_VRTC || \
     (dev)->backend_kind == LIBXL__DEVICE_KIND_VSND || \
-    (dev)->backend_kind == LIBXL__DEVICE_KIND_VTTY)
+    (dev)->backend_kind == LIBXL__DEVICE_KIND_VTTY || \
+    (dev)->backend_kind == LIBXL__DEVICE_KIND_VEVENT)
 
 #define XC_PCI_BDF             "0x%x, 0x%x, 0x%x, 0x%x"
 #define PCI_DEVFN(slot, func)   ((((slot) & 0x1f) << 3) | ((func) & 0x07))
@@ -1193,6 +1194,7 @@ _hidden int libxl__device_vrtc_setdefault(libxl__gc *gc, libxl_device_vrtc *vrtc
 _hidden int libxl__device_vsnd_setdefault(libxl__gc *gc, libxl_device_vsnd *vsnd);
 _hidden int libxl__device_vtty_setdefault(libxl__gc *gc, libxl_device_vtty *vtty);
 _hidden int libxl__device_vfb_setdefault(libxl__gc *gc, libxl_device_vfb *vfb);
+_hidden int libxl__device_vevent_setdefault(libxl__gc *gc, libxl_device_vevent *vevent);
 _hidden int libxl__device_vkb_setdefault(libxl__gc *gc, libxl_device_vkb *vkb);
 _hidden int libxl__device_pci_setdefault(libxl__gc *gc, libxl_device_pci *pci);
 _hidden void libxl__rdm_setdefault(libxl__gc *gc,
@@ -2594,6 +2596,11 @@ _hidden int libxl__device_vkb_add(libxl__gc *gc, uint32_t domid,
 _hidden int libxl__device_vfb_add(libxl__gc *gc, uint32_t domid,
                                   libxl_device_vfb *vfb);
 
+/* AO operation to connect a vevent device */
+_hidden void libxl__device_vevent_add(libxl__egc *egc, uint32_t domid,
+                                      libxl_device_vevent *vevent,
+                                      libxl__ao_device *aodev);
+
 /* Waits for the passed device to reach state XenbusStateInitWait.
  * This is not really useful by itself, but is important when executing
  * hotplug scripts, since we need to be sure the device is in the correct
@@ -3313,6 +3320,10 @@ _hidden void libxl__add_vttys(libxl__egc *egc, libxl__ao *ao, uint32_t domid,
 _hidden void libxl__add_vsnds(libxl__egc *egc, libxl__ao *ao, uint32_t domid,
                              libxl_domain_config *d_config,
                              libxl__multidev *multidev);
+
+_hidden void libxl__add_vevents(libxl__egc *egc, libxl__ao *ao, uint32_t domid,
+                                libxl_domain_config *d_config,
+                                libxl__multidev *multidev);
 /*----- device model creation -----*/
 
 /* First layer; wraps libxl__spawn_spawn. */
@@ -3979,6 +3990,13 @@ static inline void libxl__update_config_vtpm(libxl__gc *gc,
 static inline void libxl__update_config_vsnd(libxl__gc *gc,
                                              libxl_device_vsnd *dst,
                                              libxl_device_vsnd *src)
+{
+    dst->devid = src->devid;
+}
+
+static inline void libxl__update_config_vevent(libxl__gc *gc,
+                                               libxl_device_vevent *dst,
+                                               libxl_device_vevent *src)
 {
     dst->devid = src->devid;
 }

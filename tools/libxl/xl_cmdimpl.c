@@ -1271,7 +1271,8 @@ static void parse_config_data(const char *config_source,
     const char *buf;
     long l, vcpus = 0;
     XLU_Config *config;
-    XLU_ConfigList *cpus, *vbds, *nics, *pcis, *cvfbs, *cpuids, *vtpms, *vrtcs, *vttys, *vsnds;
+    XLU_ConfigList *cpus, *cpuids, *vbds, *nics, *pcis;
+    XLU_ConfigList *cvfbs, *vevents, *vtpms, *vrtcs, *vttys, *vsnds;
     XLU_ConfigList *channels, *ioports, *irqs, *iomem, *viridian, *dtdevs;
     int num_ioports, num_irqs, num_iomem, num_cpus, num_viridian;
     int pci_power_mgmt = 0;
@@ -2192,6 +2193,61 @@ skip_nic:
 
 skip_vfb:
             free(buf2);
+        }
+    }
+
+    if (!xlu_cfg_get_list(config, "vevent", &vevents, 0, 0)) {
+        d_config->num_vevents = 0;
+        d_config->vevents = NULL;
+        while ((buf = xlu_cfg_get_listitem(vevents, d_config->num_vevents)) != NULL) {
+            libxl_device_vevent *vevent;
+            libxl_string_list pairs;
+            char *path = NULL;
+            int len;
+
+            vevent = ARRAY_EXTEND_INIT(d_config->vevents, d_config->num_vevents,
+                                       libxl_device_vevent_init);
+
+            split_string_into_string_list(buf, ",", &pairs);
+            len = libxl_string_list_length(&pairs);
+
+            for (i = 0; i < len; i++) {
+                char *key, *key_untrimmed, *value, *value_untrimmed;
+                int rc;
+                rc = split_string_into_pair(pairs[i], "=",
+                                            &key_untrimmed,
+                                            &value_untrimmed);
+                if (rc != 0) {
+                    fprintf(stderr, "failed to parse vevent configuration: %s",
+                            pairs[i]);
+                    exit(1);
+                }
+                trim(isspace, key_untrimmed, &key);
+                trim(isspace, value_untrimmed, &value);
+
+                if (!strcmp(key, "backendid")) {
+                    vevent->backend_domid = atoi(value);
+                } else if (!strcmp(key, "backend")) {
+                    replace_string(&vevent->backend_domname, value);
+                } else if (!strcmp(key, "devid")) {
+                    vevent->devid = atoi(value);
+                } else if (!strcmp(key, "featureabsptr")) {
+                    vevent->feature_abs_pointer = atoi(value);
+                } else if (!strcmp(key, "abswidth")) {
+                    vevent->abs_width = atoi(value);
+                } else if (!strcmp(key, "absheight")) {
+                    vevent->abs_height = atoi(value);
+                } else {
+                    fprintf(stderr, "unknown vevent parameter '%s',"
+                                  " ignoring\n", key);
+                }
+                free(key);
+                free(key_untrimmed);
+                free(value);
+                free(value_untrimmed);
+            }
+            libxl_string_list_dispose(&pairs);
+            free(path);
         }
     }
 
@@ -7276,6 +7332,118 @@ int main_vttydetach(int argc, char **argv)
     }
 
     libxl_device_vtty_dispose(&vtty);
+    return rc;
+}
+
+int main_veventattach(int argc, char **argv)
+{
+    int opt;
+    uint32_t fe_domid;
+    libxl_device_vevent vevent;
+    char *oparg;
+
+    SWITCH_FOREACH_OPT(opt, "", NULL, "vevent-attach", 1) {
+        /* No options */
+    }
+
+    if (libxl_domain_qualifier_to_domid(ctx, argv[optind], &fe_domid) < 0) {
+        fprintf(stderr, "%s is an invalid domain identifier\n", argv[optind]);
+        return 1;
+    }
+    optind++;
+
+    for (argv += optind+1, argc -= optind+1; argc > 0; ++argv, --argc) {
+        if (MATCH_OPTION("backend", *argv, oparg)) {
+            replace_string(&vevent.backend_domname, oparg);
+        } else if (MATCH_OPTION("devid", *argv, oparg)) {
+            vevent.devid = atoi(oparg);
+        } else {
+            fprintf(stderr, "unrecognized argument `%s'\n", *argv);
+            return 1;
+        }
+    }
+
+    if (dryrun_only) {
+        char *json = libxl_device_vevent_to_json(ctx, &vevent);
+        printf("vevent: %s\n", json);
+        free(json);
+        if (ferror(stdout) || fflush(stdout)) { perror("stdout"); exit(-1); }
+        return 0;
+    }
+
+    if (libxl_device_vevent_add(ctx, fe_domid, &vevent, 0)) {
+        fprintf(stderr, "libxl_device_vevent_add failed.\n");
+        return 1;
+    }
+
+    return 0;
+}
+
+int main_veventlist(int argc, char **argv)
+{
+    int opt;
+    int i, nb;
+    libxl_device_vevent *vevents;
+    libxl_veventinfo veventinfo;
+
+    SWITCH_FOREACH_OPT(opt, "", NULL, "vevent-list", 1) {
+        /* No options */
+    }
+
+    printf("%-5s %-3s %-6s %-5s %-6s %-8s %-40s %-40s\n",
+           "Vdev", "BE", "handle", "state", "evt-ch",
+           "ring-ref", "BE-path", "FE-path");
+    for (argv += optind, argc -= optind; argc > 0; --argc, ++argv) {
+        uint32_t domid;
+        if (libxl_domain_qualifier_to_domid(ctx, *argv, &domid) < 0) {
+            fprintf(stderr, "%s is an invalid domain identifier\n", *argv);
+            continue;
+        }
+        vevents = libxl_device_vevent_list(ctx, domid, &nb);
+        if (!vevents) {
+            continue;
+        }
+        for (i=0; i<nb; i++) {
+            if (!libxl_device_vevent_getinfo(ctx, domid, &vevents[i], &veventinfo)) {
+                /*      Vdev BE   hdl  st   evch rref BE-path FE-path */
+                printf("%-5d %-3d %-6d %-5d %-6d %-8d %-40s %-40s\n",
+                       veventinfo.devid, veventinfo.backend_id, veventinfo.frontend_id,
+                       veventinfo.state, veventinfo.evtch, veventinfo.rref,
+                       veventinfo.backend, veventinfo.frontend);
+                libxl_veventinfo_dispose(&veventinfo);
+            }
+            libxl_device_vevent_dispose(&vevents[i]);
+        }
+        free(vevents);
+    }
+
+    return 0;
+}
+
+int main_veventdetach(int argc, char **argv)
+{
+    uint32_t domid, devid;
+    int opt, rc = 0;
+    libxl_device_vevent vevent;
+
+    SWITCH_FOREACH_OPT(opt, "", NULL, "vevent-detach", 2) {
+        /* No options */
+    }
+
+    domid = find_domain(argv[optind]);
+    devid = atoi(argv[optind+1]);
+
+    if (libxl_devid_to_device_vevent(ctx, domid, devid, &vevent)) {
+        fprintf(stderr, "Error: Device %s not connected.\n", argv[optind+1]);
+        return 1;
+    }
+
+    rc = libxl_device_vevent_remove(ctx, domid, &vevent, 0);
+    if (rc) {
+        fprintf(stderr, "libxl_device_vevent_remove failed.\n");
+        return 1;
+    }
+    libxl_device_vevent_dispose(&vevent);
     return rc;
 }
 

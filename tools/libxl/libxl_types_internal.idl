@@ -25,6 +25,7 @@ libxl__device_kind = Enumeration("device_kind", [
     (9, "VRTC"),
     (10, "VSND"),
     (11, "VTTY"),
+    (12, "VEVENT"),
     ])
 
 libxl__console_backend = Enumeration("console_backend", [

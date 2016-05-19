@@ -1511,6 +1511,23 @@ int libxl_device_vfb_destroy(libxl_ctx *ctx, uint32_t domid,
                              const libxl_asyncop_how *ao_how)
                              LIBXL_EXTERNAL_CALLERS_ONLY;
 
+/* Event device (e.g. touchscreen) */
+int libxl_device_vevent_add(libxl_ctx *ctx, uint32_t domid, libxl_device_vevent *vevent,
+                            const libxl_asyncop_how *ao_how)
+                            LIBXL_EXTERNAL_CALLERS_ONLY;
+int libxl_device_vevent_remove(libxl_ctx *ctx, uint32_t domid,
+                               libxl_device_vevent *vevent,
+                               const libxl_asyncop_how *ao_how)
+                               LIBXL_EXTERNAL_CALLERS_ONLY;
+int libxl_device_vevent_destroy(libxl_ctx *ctx, uint32_t domid,
+                                libxl_device_vevent *vevent,
+                                const libxl_asyncop_how *ao_how)
+                                LIBXL_EXTERNAL_CALLERS_ONLY;
+
+libxl_device_vevent *libxl_device_vevent_list(libxl_ctx *ctx, uint32_t domid, int *num);
+int libxl_device_vevent_getinfo(libxl_ctx *ctx, uint32_t domid,
+                              libxl_device_vevent *vevent, libxl_veventinfo *veventinfo);
+
 /* PCI Passthrough */
 int libxl_device_pci_add(libxl_ctx *ctx, uint32_t domid,
                          libxl_device_pci *pcidev,

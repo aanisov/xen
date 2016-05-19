@@ -5003,6 +5003,282 @@ out:
 
 /******************************************************************************/
 
+int libxl__device_vevent_setdefault(libxl__gc *gc, libxl_device_vevent *vevent)
+{
+    int rc;
+    rc = libxl__resolve_domid(gc, vevent->backend_domname, &vevent->backend_domid);
+    return rc;
+}
+
+static int libxl__device_from_vevent(libxl__gc *gc, uint32_t domid,
+                                     libxl_device_vevent *vevent,
+                                     libxl__device *device)
+{
+    device->backend_devid = vevent->devid;
+    device->backend_domid = vevent->backend_domid;
+    device->backend_kind = LIBXL__DEVICE_KIND_VEVENT;
+    device->devid = vevent->devid;
+    device->domid = domid;
+    device->kind = LIBXL__DEVICE_KIND_VEVENT;
+
+    return 0;
+}
+
+static int libxl__device_vevent_from_xs_be(libxl__gc *gc,
+                                           const char *be_path,
+                                           libxl_device_vevent *vevent)
+{
+    const char *tmp;
+    int rc;
+
+    libxl_device_vevent_init(vevent);
+
+    tmp = READ_BACKEND(gc, "device-id");
+    if (tmp)
+        vevent->devid = atoi(tmp);
+    else
+        vevent->devid = 0;
+
+    rc = 0;
+out:
+    return rc;
+}
+
+int libxl_devid_to_device_vevent(libxl_ctx *ctx, uint32_t domid,
+                                 int devid, libxl_device_vevent *vevent)
+{
+    GC_INIT(ctx);
+    char *dompath, *path;
+    int rc = ERROR_FAIL;
+
+    libxl_device_vevent_init(vevent);
+    dompath = libxl__xs_get_dompath(gc, domid);
+    if (!dompath)
+        goto out;
+
+    path = libxl__xs_read(gc, XBT_NULL,
+                          libxl__sprintf(gc, "%s/device/vevent/%d/backend",
+                                         dompath, devid));
+    if (!path)
+        goto out;
+
+    rc = libxl__device_vevent_from_xs_be(gc, path, vevent);
+    if (rc) goto out;
+
+    rc = 0;
+out:
+    GC_FREE;
+    return rc;
+}
+
+void libxl__device_vevent_add(libxl__egc *egc, uint32_t domid,
+                              libxl_device_vevent *vevent,
+                              libxl__ao_device *aodev)
+{
+    STATE_AO_GC(aodev->ao);
+    flexarray_t *front;
+    flexarray_t *back;
+    libxl__device *device;
+    int rc;
+    xs_transaction_t t = XBT_NULL;
+    libxl_domain_config d_config;
+    libxl_device_vevent vevent_saved;
+    libxl__domain_userdata_lock *lock = NULL;
+
+    libxl_domain_config_init(&d_config);
+    libxl_device_vevent_init(&vevent_saved);
+    libxl_device_vevent_copy(CTX, &vevent_saved, vevent);
+
+    rc = libxl__device_vevent_setdefault(gc, vevent);
+    if (rc) goto out;
+
+    front = flexarray_make(gc, 16, 1);
+    back = flexarray_make(gc, 16, 1);
+    if (vevent->devid == -1) {
+        if ((vevent->devid = libxl__device_nextid(gc, domid, "vevent")) < 0) {
+            rc = ERROR_FAIL;
+            goto out;
+        }
+    }
+
+    libxl__update_config_vevent(gc, &vevent_saved, vevent);
+
+    GCNEW(device);
+    rc = libxl__device_from_vevent(gc, domid, vevent, device);
+    if ( rc != 0 ) goto out;
+
+    flexarray_append(back, "feature-abs-pointer");
+    flexarray_append(back, libxl__sprintf(gc, "%d", vevent->feature_abs_pointer));
+    flexarray_append(back, "abs-width");
+    flexarray_append(back, libxl__sprintf(gc, "%d", vevent->abs_width));
+    flexarray_append(back, "abs-height");
+    flexarray_append(back, libxl__sprintf(gc, "%d", vevent->abs_height));
+    flexarray_append(back, "frontend-id");
+    flexarray_append(back, libxl__sprintf(gc, "%d", domid));
+    flexarray_append(back, "online");
+    flexarray_append(back, "1");
+    flexarray_append(back, "state");
+    flexarray_append(back, libxl__sprintf(gc, "%d", 1));
+
+    flexarray_append(front, "device-id");
+    flexarray_append(front, GCSPRINTF("%d", vevent->devid));
+    flexarray_append(front, "backend-id");
+    flexarray_append(front, libxl__sprintf(gc, "%d", vevent->backend_domid));
+    flexarray_append(front, "state");
+    flexarray_append(front, libxl__sprintf(gc, "%d", 1));
+
+    if (aodev->update_json) {
+        lock = libxl__lock_domain_userdata(gc, domid);
+        if (!lock) {
+            rc = ERROR_LOCK_FAIL;
+            goto out;
+        }
+
+        rc = libxl__get_domain_configuration(gc, domid, &d_config);
+        LOG(INFO, "aodev updates JSON, libxl__get_domain_configuration returned %d", rc);
+        if (rc) goto out;
+
+        DEVICE_ADD(vevent, vevents, domid, &vevent_saved, COMPARE_DEVID, &d_config);
+    }
+
+    for (;;) {
+        rc = libxl__xs_transaction_start(gc, &t);
+        if (rc) goto out;
+
+        rc = libxl__device_exists(gc, t, device);
+        if (rc < 0) goto out;
+        if (rc == 1) {              /* already exists in xenstore */
+            LOG(ERROR, "device already exists in xenstore");
+            aodev->action = LIBXL__DEVICE_ACTION_ADD; /* for error message */
+            rc = ERROR_DEVICE_EXISTS;
+            goto out;
+        }
+
+        if (aodev->update_json) {
+            rc = libxl__set_domain_configuration(gc, domid, &d_config);
+            if (rc) goto out;
+        }
+
+        libxl__device_generic_add(gc, t, device,
+                                  libxl__xs_kvs_of_flexarray(gc, back,
+                                                             back->count),
+                                  libxl__xs_kvs_of_flexarray(gc, front,
+                                                             front->count),
+                                  NULL);
+
+        rc = libxl__xs_transaction_commit(gc, &t);
+
+        if (!rc) break;
+        if (rc < 0) goto out;
+    }
+
+    aodev->dev = device;
+    aodev->action = LIBXL__DEVICE_ACTION_ADD;
+    libxl__wait_device_connection(egc, aodev);
+
+    rc = 0;
+out:
+    libxl__xs_transaction_abort(gc, &t);
+    if (lock) libxl__unlock_domain_userdata(lock);
+    libxl_device_vevent_dispose(&vevent_saved);
+    libxl_domain_config_dispose(&d_config);
+    aodev->rc = rc;
+    if(rc) aodev->callback(egc, aodev);
+    return;
+}
+
+libxl_device_vevent *libxl_device_vevent_list(libxl_ctx *ctx, uint32_t domid, int *num)
+{
+    GC_INIT(ctx);
+
+    libxl_device_vevent* vevents = NULL;
+    char* fe_path = NULL;
+    char** dir = NULL;
+    unsigned int ndirs = 0;
+
+    *num = 0;
+
+    fe_path = libxl__sprintf(gc, "%s/device/vevent", libxl__xs_get_dompath(gc, domid));
+    dir = libxl__xs_directory(gc, XBT_NULL, fe_path, &ndirs);
+    if (dir && ndirs) {
+       vevents = malloc(sizeof(*vevents) * ndirs);
+       libxl_device_vevent* vevent;
+       libxl_device_vevent* end = vevents + ndirs;
+       for(vevent = vevents; vevent < end; ++vevent, ++dir) {
+          char* tmp;
+
+          libxl_device_vevent_init(vevent);
+
+          vevent->devid = atoi(*dir);
+
+          tmp = libxl__xs_read(gc, XBT_NULL,
+                GCSPRINTF("%s/%s/backend-id",
+                   fe_path, *dir));
+          vevent->backend_domid = atoi(tmp);
+       }
+    }
+    *num = ndirs;
+
+    GC_FREE;
+    return vevents;
+}
+
+int libxl_device_vevent_getinfo(libxl_ctx *ctx, uint32_t domid, libxl_device_vevent *vevent, libxl_veventinfo *veventinfo)
+{
+    GC_INIT(ctx);
+    char *dompath, *veventpath;
+    char *val;
+    int rc = 0;
+
+    libxl_veventinfo_init(veventinfo);
+    dompath = libxl__xs_get_dompath(gc, domid);
+    veventinfo->devid = vevent->devid;
+
+    veventpath = GCSPRINTF("%s/device/vevent/%d", dompath, veventinfo->devid);
+    veventinfo->backend = xs_read(ctx->xsh, XBT_NULL,
+          GCSPRINTF("%s/backend", veventpath), NULL);
+
+    if (!veventinfo->backend) {
+        goto err;
+    }
+
+    if(!libxl__xs_read(gc, XBT_NULL, veventinfo->backend)) {
+       goto err;
+    }
+
+    val = libxl__xs_read(gc, XBT_NULL,
+          GCSPRINTF("%s/backend-id", veventpath));
+    veventinfo->backend_id = val ? strtoul(val, NULL, 10) : -1;
+
+    val = libxl__xs_read(gc, XBT_NULL,
+          GCSPRINTF("%s/state", veventpath));
+    veventinfo->state = val ? strtoul(val, NULL, 10) : -1;
+
+    val = libxl__xs_read(gc, XBT_NULL,
+          GCSPRINTF("%s/event-channel", veventpath));
+    veventinfo->evtch = val ? strtoul(val, NULL, 10) : -1;
+
+    val = libxl__xs_read(gc, XBT_NULL,
+          GCSPRINTF("%s/ring-ref", veventpath));
+    veventinfo->rref = val ? strtoul(val, NULL, 10) : -1;
+
+    veventinfo->frontend = xs_read(ctx->xsh, XBT_NULL,
+          GCSPRINTF("%s/frontend", veventinfo->backend), NULL);
+
+    val = libxl__xs_read(gc, XBT_NULL,
+          GCSPRINTF("%s/frontend-id", veventinfo->backend));
+    veventinfo->frontend_id = val ? strtoul(val, NULL, 10) : -1;
+
+    goto exit;
+err:
+    rc = ERROR_FAIL;
+exit:
+    GC_FREE;
+    return rc;
+}
+
+/******************************************************************************/
+
 /* Macro for defining device remove/destroy functions in a compact way */
 /* The following functions are defined:
  * libxl_device_disk_remove
@@ -5021,6 +5297,8 @@ out:
  * libxl_device_vsnd_destroy
  * libxl_device_vtty_remove
  * libxl_device_vtty_destroy
+ * libxl_device_vevent_remove
+ * libxl_device_vevent_destroy
  */
 #define DEFINE_DEVICE_REMOVE(type, removedestroy, f)                    \
     int libxl_device_##type##_##removedestroy(libxl_ctx *ctx,           \
@@ -5064,7 +5342,6 @@ DEFINE_DEVICE_REMOVE(vkb, remove, 0)
 DEFINE_DEVICE_REMOVE(vkb, destroy, 1)
 
 /* vfb */
-
 DEFINE_DEVICE_REMOVE(vfb, remove, 0)
 DEFINE_DEVICE_REMOVE(vfb, destroy, 1)
 
@@ -5084,6 +5361,10 @@ DEFINE_DEVICE_REMOVE(vsnd, destroy, 1)
 DEFINE_DEVICE_REMOVE(vtty, remove, 0)
 DEFINE_DEVICE_REMOVE(vtty, destroy, 1)
 
+/* vevent */
+DEFINE_DEVICE_REMOVE(vevent, remove, 0)
+DEFINE_DEVICE_REMOVE(vevent, destroy, 1)
+
 /* channel/console hotunplug is not implemented. There are 2 possibilities:
  * 1. add support for secondary consoles to xenconsoled
  * 2. dynamically add/remove qemu chardevs via qmp messages. */
@@ -5100,6 +5381,7 @@ DEFINE_DEVICE_REMOVE(vtty, destroy, 1)
  * libxl_device_vrtc_add
  * libxl_device_vsnd_add
  * libxl_device_vtty_add
+ * libxl_device_vevent_add
  */
 
 #define DEFINE_DEVICE_ADD(type)                                         \
@@ -5139,6 +5421,9 @@ DEFINE_DEVICE_ADD(vsnd)
 
 /* vtty */
 DEFINE_DEVICE_ADD(vtty)
+
+/* vevent */
+DEFINE_DEVICE_ADD(vevent)
 
 #undef DEFINE_DEVICE_ADD
 
@@ -7662,6 +7947,8 @@ int libxl_retrieve_domain_configuration(libxl_ctx *ctx, uint32_t domid,
     MERGE(pci, pcidevs, COMPARE_PCI, {});
 
     MERGE(vtty, vttys, COMPARE_DEVID, {});
+
+    MERGE(vevent, vevents, COMPARE_DEVID, {});
 
     /* Take care of removable device. We maintain invariant in the
      * insert / remove operation so that:
