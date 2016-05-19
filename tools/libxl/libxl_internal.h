@@ -478,7 +478,8 @@ typedef struct {
     (dev)->backend_kind == LIBXL__DEVICE_KIND_VFB || \
     (dev)->backend_kind == LIBXL__DEVICE_KIND_VKBD || \
     (dev)->backend_kind == LIBXL__DEVICE_KIND_VRTC || \
-    (dev)->backend_kind == LIBXL__DEVICE_KIND_VSND)
+    (dev)->backend_kind == LIBXL__DEVICE_KIND_VSND || \
+    (dev)->backend_kind == LIBXL__DEVICE_KIND_VTTY)
 
 #define XC_PCI_BDF             "0x%x, 0x%x, 0x%x, 0x%x"
 #define PCI_DEVFN(slot, func)   ((((slot) & 0x1f) << 3) | ((func) & 0x07))
@@ -1190,6 +1191,7 @@ _hidden int libxl__device_nic_setdefault(libxl__gc *gc, libxl_device_nic *nic,
 _hidden int libxl__device_vtpm_setdefault(libxl__gc *gc, libxl_device_vtpm *vtpm);
 _hidden int libxl__device_vrtc_setdefault(libxl__gc *gc, libxl_device_vrtc *vrtc);
 _hidden int libxl__device_vsnd_setdefault(libxl__gc *gc, libxl_device_vsnd *vsnd);
+_hidden int libxl__device_vtty_setdefault(libxl__gc *gc, libxl_device_vtty *vtty);
 _hidden int libxl__device_vfb_setdefault(libxl__gc *gc, libxl_device_vfb *vfb);
 _hidden int libxl__device_vkb_setdefault(libxl__gc *gc, libxl_device_vkb *vkb);
 _hidden int libxl__device_pci_setdefault(libxl__gc *gc, libxl_device_pci *pci);
@@ -2579,6 +2581,11 @@ _hidden void libxl__device_vsnd_add(libxl__egc *egc, uint32_t domid,
                                     libxl_device_vsnd *vsnd,
                                     libxl__ao_device *aodev);
 
+/* AO operation to connect a tty device */
+_hidden void libxl__device_vtty_add(libxl__egc *egc, uint32_t domid,
+                                    libxl_device_vtty *vtty,
+                                    libxl__ao_device *aodev);
+
 /* Internal function to connect a vkb device */
 _hidden int libxl__device_vkb_add(libxl__gc *gc, uint32_t domid,
                                   libxl_device_vkb *vkb);
@@ -3298,6 +3305,10 @@ _hidden void libxl__add_vtpms(libxl__egc *egc, libxl__ao *ao, uint32_t domid,
 _hidden void libxl__add_vrtcs(libxl__egc *egc, libxl__ao *ao, uint32_t domid,
                              libxl_domain_config *d_config,
                              libxl__multidev *multidev);
+
+_hidden void libxl__add_vttys(libxl__egc *egc, libxl__ao *ao, uint32_t domid,
+                              libxl_domain_config *d_config,
+                              libxl__multidev *multidev);
 
 _hidden void libxl__add_vsnds(libxl__egc *egc, libxl__ao *ao, uint32_t domid,
                              libxl_domain_config *d_config,

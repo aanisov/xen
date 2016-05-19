@@ -546,6 +546,7 @@ void libxl__multidev_prepared(libxl__egc *egc,
  * libxl__add_vtpms
  * libxl__add_vrtcs
  * libxl__add_vsnds
+ * libxl__add_vttys
  */
 
 #define DEFINE_DEVICES_ADD(type)                                        \
@@ -567,6 +568,7 @@ DEFINE_DEVICES_ADD(nic)
 DEFINE_DEVICES_ADD(vtpm)
 DEFINE_DEVICES_ADD(vrtc)
 DEFINE_DEVICES_ADD(vsnd)
+DEFINE_DEVICES_ADD(vtty)
 
 #undef DEFINE_DEVICES_ADD
 

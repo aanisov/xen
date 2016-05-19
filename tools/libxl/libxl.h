@@ -1468,6 +1468,23 @@ libxl_device_vsnd *libxl_device_vsnd_list(libxl_ctx *ctx, uint32_t domid, int *n
 int libxl_device_vsnd_getinfo(libxl_ctx *ctx, uint32_t domid,
                               libxl_device_vsnd *vsnd, libxl_vsndinfo *vsndinfo);
 
+/* TTY */
+int libxl_device_vtty_add(libxl_ctx *ctx, uint32_t domid, libxl_device_vtty *vtty,
+                          const libxl_asyncop_how *ao_how)
+                          LIBXL_EXTERNAL_CALLERS_ONLY;
+int libxl_device_vtty_remove(libxl_ctx *ctx, uint32_t domid,
+                             libxl_device_vtty *vtty,
+                             const libxl_asyncop_how *ao_how)
+                             LIBXL_EXTERNAL_CALLERS_ONLY;
+int libxl_device_vtty_destroy(libxl_ctx *ctx, uint32_t domid,
+                              libxl_device_vtty *vtty,
+                              const libxl_asyncop_how *ao_how)
+                              LIBXL_EXTERNAL_CALLERS_ONLY;
+
+libxl_device_vtty *libxl_device_vtty_list(libxl_ctx *ctx, uint32_t domid, int *num);
+int libxl_device_vtty_getinfo(libxl_ctx *ctx, uint32_t domid,
+                              libxl_device_vtty *vtty, libxl_vttyinfo *vttyinfo);
+
 /* Keyboard */
 int libxl_device_vkb_add(libxl_ctx *ctx, uint32_t domid, libxl_device_vkb *vkb,
                          const libxl_asyncop_how *ao_how)

@@ -1271,7 +1271,7 @@ static void parse_config_data(const char *config_source,
     const char *buf;
     long l, vcpus = 0;
     XLU_Config *config;
-    XLU_ConfigList *cpus, *vbds, *nics, *pcis, *cvfbs, *cpuids, *vtpms, *vrtcs, *vsnds;
+    XLU_ConfigList *cpus, *vbds, *nics, *pcis, *cvfbs, *cpuids, *vtpms, *vrtcs, *vttys, *vsnds;
     XLU_ConfigList *channels, *ioports, *irqs, *iomem, *viridian, *dtdevs;
     int num_ioports, num_irqs, num_iomem, num_cpus, num_viridian;
     int pci_power_mgmt = 0;
@@ -1890,6 +1890,54 @@ static void parse_config_data(const char *config_source,
                     vrtc->devid = atoi(value);
                 } else if (!strcmp(key, "device")) {
                     replace_string(&vrtc->device, value);
+                }
+                free(key);
+                free(key_untrimmed);
+                free(value);
+                free(value_untrimmed);
+            }
+            libxl_string_list_dispose(&pairs);
+            free(path);
+        }
+    }
+
+    if (!xlu_cfg_get_list(config, "vtty", &vttys, 0, 0)) {
+        d_config->num_vttys = 0;
+        d_config->vttys = NULL;
+        while ((buf = xlu_cfg_get_listitem(vttys, d_config->num_vttys)) != NULL) {
+            libxl_device_vtty *vtty;
+            libxl_string_list pairs;
+            char *path = NULL;
+            int len;
+
+            vtty = ARRAY_EXTEND_INIT(d_config->vttys, d_config->num_vttys,
+                                     libxl_device_vtty_init);
+
+            split_string_into_string_list(buf, ",", &pairs);
+            len = libxl_string_list_length(&pairs);
+
+            for (i = 0; i < len; i++) {
+                char *key, *key_untrimmed, *value, *value_untrimmed;
+                int rc;
+                rc = split_string_into_pair(pairs[i], "=",
+                                            &key_untrimmed,
+                                            &value_untrimmed);
+                if (rc != 0) {
+                    fprintf(stderr, "failed to parse vtty configuration: %s",
+                            pairs[i]);
+                    exit(1);
+                }
+                trim(isspace, key_untrimmed, &key);
+                trim(isspace, value_untrimmed, &value);
+
+                if (!strcmp(key, "backendid")) {
+                    vtty->backend_domid = atoi(value);
+                } else if (!strcmp(key, "backend")) {
+                    replace_string(&vtty->backend_domname, value);
+                } else if (!strcmp(key, "devid")) {
+                    vtty->devid = atoi(value);
+                } else if (!strcmp(key, "device")) {
+                    replace_string(&vtty->device, value);
                 }
                 free(key);
                 free(key_untrimmed);
@@ -7118,6 +7166,116 @@ int main_vsnddetach(int argc, char **argv)
         return 1;
     }
     libxl_device_vsnd_dispose(&vsnd);
+    return rc;
+}
+
+int main_vttyattach(int argc, char **argv)
+{
+
+    int opt;
+    uint32_t fe_domid;
+    libxl_device_vtty vtty;
+    /*  XLU_Config *config = 0; */
+
+    SWITCH_FOREACH_OPT(opt, "", NULL, "vtty-attach", 2) {
+        /* No options */
+    }
+
+    if (libxl_domain_qualifier_to_domid(ctx, argv[optind], &fe_domid) < 0) {
+        fprintf(stderr, "%s is an invalid domain identifier\n", argv[optind]);
+        return 1;
+    }
+    optind++;
+
+	if (optind < argc) {
+		replace_string(&vtty.device, argv[optind]);
+	}
+
+    /* TODO: fix this temporary hardcode */
+    vtty.backend_domname = "Domain-D";
+    vtty.backend_domid = 1;
+
+    if (dryrun_only) {
+        char *json = libxl_device_vtty_to_json(ctx, &vtty);
+        printf("vtty: %s\n", json);
+        free(json);
+        if (ferror(stdout) || fflush(stdout)) { perror("stdout"); exit(-1); }
+        return 0;
+    }
+
+    if (libxl_device_vtty_add(ctx, fe_domid, &vtty, 0)) {
+        fprintf(stderr, "libxl_device_vtty_add failed.\n");
+        return 1;
+    }
+
+    return 0;
+}
+
+int main_vttylist(int argc, char **argv)
+{
+   int opt;
+   int i, nb;
+   libxl_device_vtty *vttys;
+   libxl_vttyinfo vttyinfo;
+
+   SWITCH_FOREACH_OPT(opt, "", NULL, "vtty-list", 1) {
+       /* No options */
+   }
+
+   /* vttyinfo.uuid should be outputted too */
+   printf("%-5s %-3s %-6s %-5s %-6s %-8s %-40s %-40s\n",
+           "Vdev", "BE", "handle", "state", "evt-ch", "ring-ref", "BE-path", "FE-path");
+   for (argv += optind, argc -= optind; argc > 0; --argc, ++argv) {
+       uint32_t domid;
+       if (libxl_domain_qualifier_to_domid(ctx, *argv, &domid) < 0) {
+           fprintf(stderr, "%s is an invalid domain identifier\n", *argv);
+           continue;
+       }
+       vttys = libxl_device_vtty_list(ctx, domid, &nb);
+       if (!vttys) {
+           continue;
+       }
+       for (i=0; i<nb; i++) {
+           if (!libxl_device_vtty_getinfo(ctx, domid, &vttys[i], &vttyinfo)) {
+               /*      Vdev BE   hdl  st   evch rref BE-path FE-path UUID */
+               printf("%-5d %-3d %-6d %-5d %-6d %-8d %-40s %-40s\n",
+                       vttyinfo.devid, vttyinfo.backend_id, vttyinfo.frontend_id,
+                       vttyinfo.state, vttyinfo.evtch, vttyinfo.rref, vttyinfo.backend,
+                       vttyinfo.frontend);
+               libxl_vttyinfo_dispose(&vttyinfo);
+           }
+           libxl_device_vtty_dispose(&vttys[i]);
+       }
+       free(vttys);
+   }
+   return 0;
+}
+
+int main_vttydetach(int argc, char **argv)
+{
+    uint32_t domid, devid;
+    int opt, rc = 0;
+    libxl_device_vtty vtty;
+
+    SWITCH_FOREACH_OPT(opt, "", NULL, "vtty-detach", 2) {
+        /* No options */
+    }
+
+    domid = find_domain(argv[optind]);
+    devid = atoi(argv[optind+1]);
+
+    if (libxl_devid_to_device_vtty(ctx, domid, devid, &vtty)) {
+        fprintf(stderr, "Error: Device %s not connected.\n", argv[optind+1]);
+        return 1;
+    }
+
+    rc = libxl_device_vtty_remove(ctx, domid, &vtty, 0);
+    if (rc) {
+        fprintf(stderr, "libxl_device_vtty_remove failed.\n");
+        return 1;
+    }
+
+    libxl_device_vtty_dispose(&vtty);
     return rc;
 }
 
