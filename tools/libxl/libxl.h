@@ -1451,6 +1451,22 @@ int libxl_device_vrtc_destroy(libxl_ctx *ctx, uint32_t domid,
 libxl_device_vrtc *libxl_device_vrtc_list(libxl_ctx *ctx, uint32_t domid, int *num);
 int libxl_device_vrtc_getinfo(libxl_ctx *ctx, uint32_t domid,
                               libxl_device_vrtc *vrtc, libxl_vrtcinfo *vrtcinfo);
+/* Audio */
+int libxl_device_vsnd_add(libxl_ctx *ctx, uint32_t domid, libxl_device_vsnd *vsnd,
+                          const libxl_asyncop_how *ao_how)
+                          LIBXL_EXTERNAL_CALLERS_ONLY;
+int libxl_device_vsnd_remove(libxl_ctx *ctx, uint32_t domid,
+                             libxl_device_vsnd *vsnd,
+                             const libxl_asyncop_how *ao_how)
+                             LIBXL_EXTERNAL_CALLERS_ONLY;
+int libxl_device_vsnd_destroy(libxl_ctx *ctx, uint32_t domid,
+                              libxl_device_vsnd *vsnd,
+                              const libxl_asyncop_how *ao_how)
+                              LIBXL_EXTERNAL_CALLERS_ONLY;
+
+libxl_device_vsnd *libxl_device_vsnd_list(libxl_ctx *ctx, uint32_t domid, int *num);
+int libxl_device_vsnd_getinfo(libxl_ctx *ctx, uint32_t domid,
+                              libxl_device_vsnd *vsnd, libxl_vsndinfo *vsndinfo);
 
 /* Keyboard */
 int libxl_device_vkb_add(libxl_ctx *ctx, uint32_t domid, libxl_device_vkb *vkb,

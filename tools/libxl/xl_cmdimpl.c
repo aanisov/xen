@@ -627,6 +627,15 @@ static void set_default_nic_values(libxl_device_nic *nic)
     }
 }
 
+static void set_default_vsnd_values(libxl_device_vsnd *vsnd)
+{
+    vsnd->short_name = "Unknown";
+    vsnd->long_name = "Unknown";
+    vsnd->sample_formats = "";
+    vsnd->rates = "";
+    vsnd->slave_device = "";
+}
+
 static void split_string_into_string_list(const char *str,
                                           const char *delim,
                                           libxl_string_list *psl)
@@ -1262,7 +1271,7 @@ static void parse_config_data(const char *config_source,
     const char *buf;
     long l, vcpus = 0;
     XLU_Config *config;
-    XLU_ConfigList *cpus, *vbds, *nics, *pcis, *cvfbs, *cpuids, *vtpms, *vrtcs;
+    XLU_ConfigList *cpus, *vbds, *nics, *pcis, *cvfbs, *cpuids, *vtpms, *vrtcs, *vsnds;
     XLU_ConfigList *channels, *ioports, *irqs, *iomem, *viridian, *dtdevs;
     int num_ioports, num_irqs, num_iomem, num_cpus, num_viridian;
     int pci_power_mgmt = 0;
@@ -1881,6 +1890,83 @@ static void parse_config_data(const char *config_source,
                     vrtc->devid = atoi(value);
                 } else if (!strcmp(key, "device")) {
                     replace_string(&vrtc->device, value);
+                }
+                free(key);
+                free(key_untrimmed);
+                free(value);
+                free(value_untrimmed);
+            }
+            libxl_string_list_dispose(&pairs);
+            free(path);
+        }
+    }
+
+    if (!xlu_cfg_get_list(config, "vsnd", &vsnds, 0, 0)) {
+        d_config->num_vsnds = 0;
+        d_config->vsnds = NULL;
+        while ((buf = xlu_cfg_get_listitem(vsnds, d_config->num_vsnds)) != NULL) {
+            libxl_device_vsnd *vsnd;
+            libxl_string_list pairs;
+            char *path = NULL;
+            int len;
+
+            vsnd = ARRAY_EXTEND_INIT(d_config->vsnds, d_config->num_vsnds,
+                                   libxl_device_vsnd_init);
+
+            split_string_into_string_list(buf, ",", &pairs);
+            len = libxl_string_list_length(&pairs);
+
+            for (i = 0; i < len; i++) {
+                char *key, *key_untrimmed, *value, *value_untrimmed;
+                int rc;
+                rc = split_string_into_pair(pairs[i], "=",
+                                            &key_untrimmed,
+                                            &value_untrimmed);
+                if (rc != 0) {
+                    fprintf(stderr, "failed to parse vsnd configuration: %s",
+                            pairs[i]);
+                    exit(1);
+                }
+                trim(isspace, key_untrimmed, &key);
+                trim(isspace, value_untrimmed, &value);
+
+                if (!strcmp(key, "backendid")) {
+                    vsnd->backend_domid = atoi(value);
+                } else if (!strcmp(key, "backend")) {
+                    replace_string(&vsnd->backend_domname, value);
+                } else if (!strcmp(key, "devid")) {
+                    vsnd->devid = atoi(value);
+                } else if (!strcmp(key, "shortname")) {
+                    replace_string(&vsnd->short_name, value);
+                } else if (!strcmp(key, "longname")) {
+                    replace_string(&vsnd->long_name, value);
+                } else if (!strcmp(key, "sampleformats")) {
+                    replace_string(&vsnd->sample_formats, value);
+                } else if (!strcmp(key, "rates")) {
+                    replace_string(&vsnd->rates, value);
+                } else if (!strcmp(key, "channels_min")) {
+                    vsnd->channels_min = atoi(value);
+                } else if (!strcmp(key, "channels_max")) {
+                    vsnd->channels_max = atoi(value);
+                } else if (!strcmp(key, "priority")) {
+                    vsnd->priority = atoi(value);
+                } else if (!strcmp(key, "slave")) {
+                    replace_string(&vsnd->slave_device, value);
+                } else if (!strcmp(key, "alsacardid")) {
+                    vsnd->alsa_card_id = atoi(value);
+                } else if (!strcmp(key, "bufferbytesmax")) {
+                    vsnd->buffer_bytes_max = atoi(value);
+                } else if (!strcmp(key, "periodbytesmin")) {
+                    vsnd->period_bytes_min = atoi(value);
+                } else if (!strcmp(key, "periodbytesmax")) {
+                    vsnd->period_bytes_max = atoi(value);
+                } else if (!strcmp(key, "periodmin")) {
+                    vsnd->period_min = atoi(value);
+                } else if (!strcmp(key, "periodmax")) {
+                    vsnd->period_max = atoi(value);
+                } else {
+                    fprintf(stderr, "unknown vsnd parameter '%s',"
+                                  " ignoring\n", key);
                 }
                 free(key);
                 free(key_untrimmed);
@@ -6891,6 +6977,147 @@ int main_vrtcdetach(int argc, char **argv)
     }
 
     libxl_device_vrtc_dispose(&vrtc);
+    return rc;
+}
+
+
+int main_vsndattach(int argc, char **argv)
+{
+    int opt;
+    uint32_t fe_domid;
+    libxl_device_vsnd vsnd;
+    char *oparg;
+
+    SWITCH_FOREACH_OPT(opt, "", NULL, "vsnd-attach", 1) {
+        /* No options */
+    }
+
+    if (libxl_domain_qualifier_to_domid(ctx, argv[optind], &fe_domid) < 0) {
+        fprintf(stderr, "%s is an invalid domain identifier\n", argv[optind]);
+        return 1;
+    }
+    optind++;
+
+    libxl_device_vsnd_init(&vsnd);
+    set_default_vsnd_values(&vsnd);
+
+    for (argv += optind+1, argc -= optind+1; argc > 0; ++argv, --argc) {
+        if (MATCH_OPTION("backend", *argv, oparg)) {
+            replace_string(&vsnd.backend_domname, oparg);
+        } else if (MATCH_OPTION("devid", *argv, oparg)) {
+            vsnd.devid = atoi(oparg);
+        } else if (MATCH_OPTION("shortname", *argv, oparg)) {
+            replace_string(&vsnd.short_name, oparg);
+        } else if (MATCH_OPTION("longname", *argv, oparg)) {
+            replace_string(&vsnd.long_name, oparg);
+        } else if (MATCH_OPTION("sampleformats", *argv, oparg)) {
+            replace_string(&vsnd.sample_formats, oparg);
+        } else if (MATCH_OPTION("rates", *argv, oparg)) {
+            replace_string(&vsnd.rates, oparg);
+        } else if (MATCH_OPTION("channelsmin", *argv, oparg)) {
+            vsnd.channels_min = atoi(oparg);
+        } else if (MATCH_OPTION("channelsmax", *argv, oparg)) {
+            vsnd.channels_max = atoi(oparg);
+        } else if (MATCH_OPTION("priority", *argv, oparg)) {
+            vsnd.priority = atoi(oparg);
+        } else if (MATCH_OPTION("slave", *argv, oparg)) {
+            replace_string(&vsnd.slave_device, oparg);
+        } else if (MATCH_OPTION("alsacardid", *argv, oparg)) {
+            vsnd.alsa_card_id = atoi(oparg);
+        } else if (MATCH_OPTION("bufferbytesmax", *argv, oparg)) {
+            vsnd.buffer_bytes_max = atoi(oparg);
+        } else if (MATCH_OPTION("periodbytesmin", *argv, oparg)) {
+            vsnd.period_bytes_min = atoi(oparg);
+        } else if (MATCH_OPTION("periodbytesmax", *argv, oparg)) {
+            vsnd.period_bytes_max = atoi(oparg);
+        } else if (MATCH_OPTION("periodmin", *argv, oparg)) {
+            vsnd.period_min = atoi(oparg);
+        } else if (MATCH_OPTION("periodmax", *argv, oparg)) {
+            vsnd.period_max = atoi(oparg);
+        } else {
+            fprintf(stderr, "unrecognized argument `%s'\n", *argv);
+            return 1;
+        }
+    }
+
+    if (dryrun_only) {
+        char *json = libxl_device_vsnd_to_json(ctx, &vsnd);
+        printf("vsnd: %s\n", json);
+        free(json);
+        if (ferror(stdout) || fflush(stdout)) { perror("stdout"); exit(-1); }
+        return 0;
+    }
+
+    if (libxl_device_vsnd_add(ctx, fe_domid, &vsnd, 0)) {
+        fprintf(stderr, "libxl_device_vsnd_add failed.\n");
+        return 1;
+    }
+    return 0;
+}
+
+int main_vsndlist(int argc, char **argv)
+{
+    int opt;
+    int i, nb;
+    libxl_device_vsnd *vsnds;
+    libxl_vsndinfo vsndinfo;
+
+    SWITCH_FOREACH_OPT(opt, "", NULL, "vsnd-list", 1) {
+        /* No options */
+    }
+
+    printf("%-5s %-3s %-6s %-5s %-6s %-8s %-40s %-40s\n",
+           "Vdev", "BE", "handle", "state", "evt-ch", "ring-ref", "BE-path", "FE-path");
+    for (argv += optind, argc -= optind; argc > 0; --argc, ++argv) {
+        uint32_t domid;
+        if (libxl_domain_qualifier_to_domid(ctx, *argv, &domid) < 0) {
+            fprintf(stderr, "%s is an invalid domain identifier\n", *argv);
+            continue;
+        }
+        vsnds = libxl_device_vsnd_list(ctx, domid, &nb);
+        if (!vsnds) {
+            continue;
+        }
+        for (i=0; i<nb; i++) {
+            if (!libxl_device_vsnd_getinfo(ctx, domid, &vsnds[i], &vsndinfo)) {
+                /*      Vdev BE   hdl  st   evch rref BE-path FE-path */
+                printf("%-5d %-3d %-6d %-5d %-6d %-8d %-40s %-40s\n",
+                       vsndinfo.devid, vsndinfo.backend_id, vsndinfo.frontend_id,
+                       vsndinfo.state, vsndinfo.evtch, vsndinfo.rref, vsndinfo.backend,
+                       vsndinfo.frontend);
+                libxl_vsndinfo_dispose(&vsndinfo);
+            }
+            libxl_device_vsnd_dispose(&vsnds[i]);
+        }
+        free(vsnds);
+    }
+    return 0;
+}
+
+int main_vsnddetach(int argc, char **argv)
+{
+    uint32_t domid, devid;
+    int opt, rc = 0;
+    libxl_device_vsnd vsnd;
+
+    SWITCH_FOREACH_OPT(opt, "", NULL, "vsnd-detach", 2) {
+        /* No options */
+    }
+
+    domid = find_domain(argv[optind]);
+    devid = atoi(argv[optind+1]);
+
+    if (libxl_devid_to_device_vsnd(ctx, domid, devid, &vsnd)) {
+        fprintf(stderr, "Error: Device %s not connected.\n", argv[optind+1]);
+        return 1;
+    }
+
+    rc = libxl_device_vsnd_remove(ctx, domid, &vsnd, 0);
+    if (rc) {
+        fprintf(stderr, "libxl_device_vsnd_remove failed.\n");
+        return 1;
+    }
+    libxl_device_vsnd_dispose(&vsnd);
     return rc;
 }
 

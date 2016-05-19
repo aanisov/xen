@@ -736,6 +736,8 @@ static void domcreate_attach_vtpms(libxl__egc *egc, libxl__multidev *multidev,
                                    int ret);
 static void domcreate_attach_vrtcs(libxl__egc *egc, libxl__multidev *multidev,
                                    int ret);
+static void domcreate_attach_vsnds(libxl__egc *egc, libxl__multidev *multidev,
+                                   int ret);
 static void domcreate_attach_pci(libxl__egc *egc, libxl__multidev *aodevs,
                                  int ret);
 static void domcreate_attach_dtdev(libxl__egc *egc,
@@ -1426,8 +1428,41 @@ static void domcreate_attach_vrtcs(libxl__egc *egc,
    if (d_config->num_vrtcs > 0) {
        /* Attach vrtcs */
        libxl__multidev_begin(ao, &dcs->multidev);
-       dcs->multidev.callback = domcreate_attach_pci;
+       dcs->multidev.callback = domcreate_attach_vsnds;
        libxl__add_vrtcs(egc, ao, domid, d_config, &dcs->multidev);
+       libxl__multidev_prepared(egc, &dcs->multidev, 0);
+       return;
+   }
+
+   domcreate_attach_vsnds(egc, multidev, 0);
+   return;
+
+error_out:
+   assert(ret);
+   domcreate_complete(egc, dcs, ret);
+}
+
+static void domcreate_attach_vsnds(libxl__egc *egc,
+                                   libxl__multidev *multidev,
+                                   int ret)
+{
+   libxl__domain_create_state *dcs = CONTAINER_OF(multidev, *dcs, multidev);
+   STATE_AO_GC(dcs->ao);
+   int domid = dcs->guest_domid;
+
+   libxl_domain_config* const d_config = dcs->guest_config;
+
+   if(ret) {
+       LOG(ERROR, "unable to add vrtc devices");
+       goto error_out;
+   }
+
+   /* Plug vsnd devices */
+   if (d_config->num_vsnds > 0) {
+       /* Attach vsnds */
+       libxl__multidev_begin(ao, &dcs->multidev);
+       dcs->multidev.callback = domcreate_attach_pci;
+       libxl__add_vsnds(egc, ao, domid, d_config, &dcs->multidev);
        libxl__multidev_prepared(egc, &dcs->multidev, 0);
        return;
    }
@@ -1453,7 +1488,7 @@ static void domcreate_attach_pci(libxl__egc *egc, libxl__multidev *multidev,
     libxl_domain_config *const d_config = dcs->guest_config;
 
     if (ret) {
-        LOG(ERROR, "unable to add vrtc devices");
+        LOG(ERROR, "unable to add vsnd devices");
         goto error_out;
     }
 

@@ -366,6 +366,26 @@ struct cmd_spec cmd_table[] = {
       "Destroy a domain's virtual rtc device",
       "<Domain> <DevId>",
     },
+    { "vsnd-attach",
+      &main_vsndattach, 1, 1,
+      "Create a new virtual audio device",
+      "<Domain> [backend=<BackDomain>] [devid=<DeviceId>] [shortname=<ShortName>]\n"
+      "[longname=<LongName>] [sampleformats=<SampleFormats>] [rates=<Rates>]\n"
+      "[channelsmin=<ChannelsMin>] [channelsmax=<ChannelsMax>] [priority=<Priority>]\n"
+      "[slave=<SlaveDevice>] [alsacardid=<AlsaCardId>] [bufferbytesmax=<BufferBytesMax>]\n"
+      "[periodbytesmin=<PeriodBytesMin>] [periodbytesmax=<PeriodBytesMax>]\n"
+      "[periodmin=<PeriodMin>] [periodmax=<PeriodMax>]",
+    },
+    { "vsnd-list",
+      &main_vsndlist, 0, 0,
+      "List virtual audio devices for a domain",
+      "<Domain(s)>",
+    },
+    { "vsnd-detach",
+      &main_vsnddetach, 0, 1,
+      "Destroy a domain's virtual audio device",
+      "<Domain> <DevId|uuid>",
+    },
     { "vtpm-attach",
       &main_vtpmattach, 1, 1,
       "Create a new virtual TPM device",
