@@ -1262,7 +1262,7 @@ static void parse_config_data(const char *config_source,
     const char *buf;
     long l, vcpus = 0;
     XLU_Config *config;
-    XLU_ConfigList *cpus, *vbds, *nics, *pcis, *cvfbs, *cpuids, *vtpms;
+    XLU_ConfigList *cpus, *vbds, *nics, *pcis, *cvfbs, *cpuids, *vtpms, *vrtcs;
     XLU_ConfigList *channels, *ioports, *irqs, *iomem, *viridian, *dtdevs;
     int num_ioports, num_irqs, num_iomem, num_cpus, num_viridian;
     int pci_power_mgmt = 0;
@@ -1841,6 +1841,54 @@ static void parse_config_data(const char *config_source,
                exit(1);
             }
             free(buf2);
+        }
+    }
+
+    if (!xlu_cfg_get_list(config, "vrtc", &vrtcs, 0, 0)) {
+        d_config->num_vrtcs = 0;
+        d_config->vrtcs = NULL;
+        while ((buf = xlu_cfg_get_listitem(vrtcs, d_config->num_vrtcs)) != NULL) {
+            libxl_device_vrtc *vrtc;
+            libxl_string_list pairs;
+            char *path = NULL;
+            int len;
+
+            vrtc = ARRAY_EXTEND_INIT(d_config->vrtcs, d_config->num_vrtcs,
+                                     libxl_device_vrtc_init);
+
+            split_string_into_string_list(buf, ",", &pairs);
+            len = libxl_string_list_length(&pairs);
+
+            for (i = 0; i < len; i++) {
+                char *key, *key_untrimmed, *value, *value_untrimmed;
+                int rc;
+                rc = split_string_into_pair(pairs[i], "=",
+                                            &key_untrimmed,
+                                            &value_untrimmed);
+                if (rc != 0) {
+                    fprintf(stderr, "failed to parse vrtc configuration: %s",
+                            pairs[i]);
+                    exit(1);
+                }
+                trim(isspace, key_untrimmed, &key);
+                trim(isspace, value_untrimmed, &value);
+
+                if (!strcmp(key, "backendid")) {
+                    vrtc->backend_domid = atoi(value);
+                } else if (!strcmp(key, "backend")) {
+                    replace_string(&vrtc->backend_domname, value);
+                } else if (!strcmp(key, "devid")) {
+                    vrtc->devid = atoi(value);
+                } else if (!strcmp(key, "device")) {
+                    replace_string(&vrtc->device, value);
+                }
+                free(key);
+                free(key_untrimmed);
+                free(value);
+                free(value_untrimmed);
+            }
+            libxl_string_list_dispose(&pairs);
+            free(path);
         }
     }
 
@@ -6732,6 +6780,117 @@ int main_blockdetach(int argc, char **argv)
         return 1;
     }
     libxl_device_disk_dispose(&disk);
+    return rc;
+}
+
+int main_vrtcattach(int argc, char **argv)
+{
+
+    int opt;
+    uint32_t fe_domid;
+    libxl_device_vrtc vrtc;
+    /*  XLU_Config *config = 0; */
+
+    SWITCH_FOREACH_OPT(opt, "", NULL, "vrtc-attach", 2) {
+        /* No options */
+    }
+
+    if (libxl_domain_qualifier_to_domid(ctx, argv[optind], &fe_domid) < 0) {
+        fprintf(stderr, "%s is an invalid domain identifier\n", argv[optind]);
+        return 1;
+    }
+    optind++;
+
+    if (optind < argc) {
+        replace_string(&vrtc.device, argv[optind]);
+    }
+    optind++;
+
+/* TODO: fix this temporary hardcode */
+    vrtc.backend_domname = "Domain-D";
+    vrtc.backend_domid = 1;
+
+    if (dryrun_only) {
+        char *json = libxl_device_vrtc_to_json(ctx, &vrtc);
+        printf("vrtc: %s\n", json);
+        free(json);
+        if (ferror(stdout) || fflush(stdout)) { perror("stdout"); exit(-1); }
+        return 0;
+    }
+
+    if (libxl_device_vrtc_add(ctx, fe_domid, &vrtc, 0)) {
+        fprintf(stderr, "libxl_device_vrtc_add failed.\n");
+        return 1;
+    }
+
+    return 0;
+}
+
+int main_vrtclist(int argc, char **argv)
+{
+	int opt;
+	int i, nb;
+	libxl_device_vrtc *vrtcs;
+	libxl_vrtcinfo vrtcinfo;
+
+	SWITCH_FOREACH_OPT(opt, "", NULL, "vrtc-list", 1) {
+		/* No options */
+	}
+
+	/* vrtcinfo.uuid should be outputted too */
+	printf("%-5s %-3s %-6s %-5s %-6s %-8s %-40s %-40s\n",
+			"Vdev", "BE", "handle", "state", "evt-ch", "ring-ref", "BE-path", "FE-path");
+	for (argv += optind, argc -= optind; argc > 0; --argc, ++argv) {
+		uint32_t domid;
+		if (libxl_domain_qualifier_to_domid(ctx, *argv, &domid) < 0) {
+			fprintf(stderr, "%s is an invalid domain identifier\n", *argv);
+			continue;
+		}
+		vrtcs = libxl_device_vrtc_list(ctx, domid, &nb);
+		if (!vrtcs) {
+			continue;
+		}
+		for (i=0; i<nb; i++) {
+			if (!libxl_device_vrtc_getinfo(ctx, domid, &vrtcs[i], &vrtcinfo)) {
+				/*      Vdev BE   hdl  st   evch rref BE-path FE-path UUID */
+				printf("%-5d %-3d %-6d %-5d %-6d %-8d %-40s %-40s\n",
+						vrtcinfo.devid, vrtcinfo.backend_id, vrtcinfo.frontend_id,
+						vrtcinfo.state, vrtcinfo.evtch, vrtcinfo.rref, vrtcinfo.backend,
+						vrtcinfo.frontend);
+				libxl_vrtcinfo_dispose(&vrtcinfo);
+			}
+			libxl_device_vrtc_dispose(&vrtcs[i]);
+		}
+		free(vrtcs);
+	}
+	return 0;
+}
+
+int main_vrtcdetach(int argc, char **argv)
+{
+    uint32_t domid, devid;
+    int opt, rc = 0;
+    libxl_device_vrtc vrtc;
+
+    SWITCH_FOREACH_OPT(opt, "", NULL, "vrtc-detach", 2) {
+        /* No options */
+    }
+
+    domid = find_domain(argv[optind]);
+    devid = atoi(argv[optind+1]);
+
+    if (libxl_devid_to_device_vrtc(ctx, domid, devid, &vrtc)) {
+        fprintf(stderr, "Error: Device %s not connected.\n", argv[optind+1]);
+        return 1;
+    }
+
+    rc = libxl_device_vrtc_remove(ctx, domid, &vrtc, 0);
+    if (rc) {
+        fprintf(stderr, "libxl_device_vrtc_remove failed.\n");
+        return 1;
+    }
+
+    libxl_device_vrtc_dispose(&vrtc);
     return rc;
 }
 

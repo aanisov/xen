@@ -544,6 +544,13 @@ libxl_device_vkb = Struct("device_vkb", [
     ("devid", libxl_devid),
     ])
 
+libxl_device_vrtc = Struct("device_vrtc", [
+    ("backend_domid", libxl_domid),
+    ("backend_domname", string),
+    ("devid", libxl_devid),
+    ("device", string),
+    ])
+
 libxl_device_disk = Struct("device_disk", [
     ("backend_domid", libxl_domid),
     ("backend_domname", string),
@@ -631,6 +638,7 @@ libxl_domain_config = Struct("domain_config", [
     ("vfbs", Array(libxl_device_vfb, "num_vfbs")),
     ("vkbs", Array(libxl_device_vkb, "num_vkbs")),
     ("vtpms", Array(libxl_device_vtpm, "num_vtpms")),
+    ("vrtcs", Array(libxl_device_vrtc, "num_vrtcs")),
     # a channel manifests as a console with a name,
     # see docs/misc/channels.txt
     ("channels", Array(libxl_device_channel, "num_channels")),
@@ -674,6 +682,17 @@ libxl_vtpminfo = Struct("vtpminfo", [
     ("evtch", integer),
     ("rref", integer),
     ("uuid", libxl_uuid),
+    ], dir=DIR_OUT)
+
+libxl_vrtcinfo = Struct("vrtcinfo", [
+    ("backend", string),
+    ("backend_id", uint32),
+    ("frontend", string),
+    ("frontend_id", uint32),
+    ("devid", libxl_devid),
+    ("state", integer),
+    ("evtch", integer),
+    ("rref", integer),
     ], dir=DIR_OUT)
 
 libxl_vcpuinfo = Struct("vcpuinfo", [

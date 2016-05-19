@@ -2323,6 +2323,277 @@ int libxl_devid_to_device_vtpm(libxl_ctx *ctx,
     return rc;
 }
 
+/******************************************************************************/
+
+int libxl__device_vrtc_setdefault(libxl__gc *gc, libxl_device_vrtc *vrtc)
+{
+    int rc;
+
+    rc = libxl__resolve_domid(gc, vrtc->backend_domname, &vrtc->backend_domid);
+
+    return rc;
+}
+
+static int libxl__device_from_vrtc(libxl__gc *gc, uint32_t domid, libxl_device_vrtc *vrtc, libxl__device *device)
+{
+   device->backend_devid   = vrtc->devid;
+   device->backend_domid   = vrtc->backend_domid;
+   device->backend_kind    = LIBXL__DEVICE_KIND_VRTC;
+   device->devid           = vrtc->devid;
+   device->domid           = domid;
+   device->kind            = LIBXL__DEVICE_KIND_VRTC;
+
+   return 0;
+}
+
+static int libxl__device_vrtc_from_xs_be(libxl__gc *gc,
+                                        const char *be_path,
+                                        libxl_device_vrtc *vrtc)
+{
+    const char *tmp;
+    int rc;
+
+    libxl_device_vrtc_init(vrtc);
+
+    tmp = READ_BACKEND(gc, "device-id");
+    if (tmp)
+        vrtc->devid = atoi(tmp);
+    else
+        vrtc->devid = 0;
+
+    rc = 0;
+ out:
+    return rc;
+}
+
+int libxl_devid_to_device_vrtc(libxl_ctx *ctx, uint32_t domid,
+                              int devid, libxl_device_vrtc *vrtc)
+{
+    GC_INIT(ctx);
+    char *dompath, *path;
+    int rc = ERROR_FAIL;
+
+    libxl_device_vrtc_init(vrtc);
+    dompath = libxl__xs_get_dompath(gc, domid);
+    if (!dompath)
+        goto out;
+
+    path = libxl__xs_read(gc, XBT_NULL,
+                          libxl__sprintf(gc, "%s/device/vrtc/%d/backend",
+                                         dompath, devid));
+    if (!path)
+        goto out;
+
+    rc = libxl__device_vrtc_from_xs_be(gc, path, vrtc);
+    if (rc) goto out;
+
+    rc = 0;
+out:
+    GC_FREE;
+    return rc;
+}
+
+void libxl__device_vrtc_add(libxl__egc *egc, uint32_t domid, libxl_device_vrtc *vrtc, libxl__ao_device *aodev)
+{
+    STATE_AO_GC(aodev->ao);
+    flexarray_t *front;
+    flexarray_t *back;
+    libxl__device *device;
+    int rc;
+    xs_transaction_t t = XBT_NULL;
+    libxl_domain_config d_config;
+    libxl_device_vrtc vrtc_saved;
+    libxl__domain_userdata_lock *lock = NULL;
+
+    libxl_domain_config_init(&d_config);
+    libxl_device_vrtc_init(&vrtc_saved);
+    libxl_device_vrtc_copy(CTX, &vrtc_saved, vrtc);
+
+    rc = libxl__device_vrtc_setdefault(gc, vrtc);
+    if (rc) goto out;
+
+    front = flexarray_make(gc, 16, 1);
+    back = flexarray_make(gc, 32, 1);
+
+    if ((vrtc->devid = libxl__device_nextid(gc, domid, "vrtc")) < 0) {
+        rc = ERROR_FAIL;
+        goto out;
+    }
+
+    GCNEW(device);
+    rc = libxl__device_from_vrtc(gc, domid, vrtc, device);
+    if ( rc != 0 ) goto out;
+
+    flexarray_append(back, "device-id");
+    flexarray_append(back, GCSPRINTF("%d", vrtc->devid));
+    flexarray_append(back, "frontend-id");
+    flexarray_append(back, GCSPRINTF("%d", domid));
+    flexarray_append(back, "device");
+    flexarray_append(back, vrtc->device);
+    flexarray_append(back, "online");
+    flexarray_append(back, "1");
+    flexarray_append(back, "state");
+    flexarray_append(back, GCSPRINTF("%d", 1));
+
+    flexarray_append(front, "device-id");
+    flexarray_append(front, GCSPRINTF("%d", vrtc->devid));
+    flexarray_append(front, "backend-id");
+    flexarray_append(front, GCSPRINTF("%d", vrtc->backend_domid));
+    flexarray_append(front, "state");
+    flexarray_append(front, GCSPRINTF("%d", 1));
+
+    if (aodev->update_json) {
+        lock = libxl__lock_domain_userdata(gc, domid);
+        if (!lock) {
+            rc = ERROR_LOCK_FAIL;
+            goto out;
+        }
+
+        rc = libxl__get_domain_configuration(gc, domid, &d_config);
+        LOG(INFO, "aodev updates JSON, libxl__get_domain_configuration returned %d", rc);
+        if (rc) goto out;
+
+        DEVICE_ADD(vrtc, vrtcs, domid, &vrtc_saved, COMPARE_DEVID, &d_config);
+    }
+
+    for (;;) {
+        rc = libxl__xs_transaction_start(gc, &t);
+        if (rc) goto out;
+
+        rc = libxl__device_exists(gc, t, device);
+        if (rc < 0) goto out;
+        if (rc == 1) {              /* already exists in xenstore */
+            LOG(ERROR, "device already exists in xenstore");
+            aodev->action = LIBXL__DEVICE_ACTION_ADD; /* for error message */
+            rc = ERROR_DEVICE_EXISTS;
+            goto out;
+        }
+
+        if (aodev->update_json) {
+            rc = libxl__set_domain_configuration(gc, domid, &d_config);
+            if (rc) goto out;
+        }
+
+        libxl__device_generic_add(gc, t, device,
+                                  libxl__xs_kvs_of_flexarray(gc, back,
+                                                             back->count),
+                                  libxl__xs_kvs_of_flexarray(gc, front,
+                                                             front->count),
+                                  NULL);
+
+        rc = libxl__xs_transaction_commit(gc, &t);
+
+        if (!rc) break;
+        if (rc < 0) goto out;
+    }
+
+    aodev->dev = device;
+    aodev->action = LIBXL__DEVICE_ACTION_ADD;
+    libxl__wait_device_connection(egc, aodev);
+
+    rc = 0;
+out:
+    libxl__xs_transaction_abort(gc, &t);
+    if (lock) libxl__unlock_domain_userdata(lock);
+    libxl_device_vrtc_dispose(&vrtc_saved);
+    libxl_domain_config_dispose(&d_config);
+    aodev->rc = rc;
+    if(rc) aodev->callback(egc, aodev);
+    return;
+
+}
+
+libxl_device_vrtc *libxl_device_vrtc_list(libxl_ctx *ctx, uint32_t domid, int *num)
+{
+    GC_INIT(ctx);
+
+    libxl_device_vrtc* vrtcs = NULL;
+    char* fe_path = NULL;
+    char** dir = NULL;
+    unsigned int ndirs = 0;
+
+    *num = 0;
+
+    fe_path = libxl__sprintf(gc, "%s/device/vrtc", libxl__xs_get_dompath(gc, domid));
+    dir = libxl__xs_directory(gc, XBT_NULL, fe_path, &ndirs);
+    if (dir && ndirs) {
+       vrtcs = malloc(sizeof(*vrtcs) * ndirs);
+       libxl_device_vrtc* vrtc;
+       libxl_device_vrtc* end = vrtcs + ndirs;
+       for(vrtc = vrtcs; vrtc < end; ++vrtc, ++dir) {
+          char* tmp;
+
+          libxl_device_vrtc_init(vrtc);
+
+          vrtc->devid = atoi(*dir);
+
+          tmp = libxl__xs_read(gc, XBT_NULL,
+                GCSPRINTF("%s/%s/backend-id",
+                   fe_path, *dir));
+          vrtc->backend_domid = atoi(tmp);
+       }
+    }
+    *num = ndirs;
+
+    GC_FREE;
+    return vrtcs;
+}
+
+int libxl_device_vrtc_getinfo(libxl_ctx *ctx, uint32_t domid, libxl_device_vrtc *vrtc, libxl_vrtcinfo *vrtcinfo)
+{
+    GC_INIT(ctx);
+    char *dompath, *vrtcpath;
+    char *val;
+    int rc = 0;
+
+    libxl_vrtcinfo_init(vrtcinfo);
+    dompath = libxl__xs_get_dompath(gc, domid);
+    vrtcinfo->devid = vrtc->devid;
+
+    vrtcpath = GCSPRINTF("%s/device/vrtc/%d", dompath, vrtcinfo->devid);
+    vrtcinfo->backend = xs_read(ctx->xsh, XBT_NULL,
+          GCSPRINTF("%s/backend", vrtcpath), NULL);
+
+    if (!vrtcinfo->backend) {
+        goto err;
+    }
+
+    if(!libxl__xs_read(gc, XBT_NULL, vrtcinfo->backend)) {
+       goto err;
+    }
+
+    val = libxl__xs_read(gc, XBT_NULL,
+          GCSPRINTF("%s/backend-id", vrtcpath));
+    vrtcinfo->backend_id = val ? strtoul(val, NULL, 10) : -1;
+
+    val = libxl__xs_read(gc, XBT_NULL,
+          GCSPRINTF("%s/state", vrtcpath));
+    vrtcinfo->state = val ? strtoul(val, NULL, 10) : -1;
+
+    val = libxl__xs_read(gc, XBT_NULL,
+          GCSPRINTF("%s/event-channel", vrtcpath));
+    vrtcinfo->evtch = val ? strtoul(val, NULL, 10) : -1;
+
+    val = libxl__xs_read(gc, XBT_NULL,
+          GCSPRINTF("%s/ring-ref", vrtcpath));
+    vrtcinfo->rref = val ? strtoul(val, NULL, 10) : -1;
+
+    vrtcinfo->frontend = xs_read(ctx->xsh, XBT_NULL,
+          GCSPRINTF("%s/frontend", vrtcinfo->backend), NULL);
+
+    val = libxl__xs_read(gc, XBT_NULL,
+          GCSPRINTF("%s/frontend-id", vrtcinfo->backend));
+    vrtcinfo->frontend_id = val ? strtoul(val, NULL, 10) : -1;
+
+    goto exit;
+err:
+    rc = ERROR_FAIL;
+exit:
+    GC_FREE;
+    return rc;
+}
+
+
 
 /******************************************************************************/
 
@@ -4131,12 +4402,14 @@ out:
  * libxl_device_disk_destroy
  * libxl_device_nic_remove
  * libxl_device_nic_destroy
- * libxl_device_vtpm_remove
- * libxl_device_vtpm_destroy
  * libxl_device_vkb_remove
  * libxl_device_vkb_destroy
  * libxl_device_vfb_remove
  * libxl_device_vfb_destroy
+ * libxl_device_vtpm_remove
+ * libxl_device_vtpm_destroy
+ * libxl_device_vrtc_remove
+ * libxl_device_vrtc_destroy
  */
 #define DEFINE_DEVICE_REMOVE(type, removedestroy, f)                    \
     int libxl_device_##type##_##removedestroy(libxl_ctx *ctx,           \
@@ -4188,6 +4461,10 @@ DEFINE_DEVICE_REMOVE(vfb, destroy, 1)
 DEFINE_DEVICE_REMOVE(vtpm, remove, 0)
 DEFINE_DEVICE_REMOVE(vtpm, destroy, 1)
 
+/* vrtc */
+DEFINE_DEVICE_REMOVE(vrtc, remove, 0)
+DEFINE_DEVICE_REMOVE(vrtc, destroy, 1)
+
 /* channel/console hotunplug is not implemented. There are 2 possibilities:
  * 1. add support for secondary consoles to xenconsoled
  * 2. dynamically add/remove qemu chardevs via qmp messages. */
@@ -4201,6 +4478,7 @@ DEFINE_DEVICE_REMOVE(vtpm, destroy, 1)
  * libxl_device_disk_add
  * libxl_device_nic_add
  * libxl_device_vtpm_add
+ * libxl_device_vrtc_add
  */
 
 #define DEFINE_DEVICE_ADD(type)                                         \
@@ -4231,6 +4509,9 @@ DEFINE_DEVICE_ADD(nic)
 
 /* vtpm */
 DEFINE_DEVICE_ADD(vtpm)
+
+/* vrtc */
+DEFINE_DEVICE_ADD(vrtc)
 
 #undef DEFINE_DEVICE_ADD
 
@@ -6746,6 +7027,8 @@ int libxl_retrieve_domain_configuration(libxl_ctx *ctx, uint32_t domid,
     MERGE(nic, nics, COMPARE_DEVID, {});
 
     MERGE(vtpm, vtpms, COMPARE_DEVID, {});
+
+    MERGE(vrtc, vrtcs, COMPARE_DEVID, {});
 
     MERGE(pci, pcidevs, COMPARE_PCI, {});
 
