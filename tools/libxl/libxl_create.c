@@ -736,6 +736,8 @@ static void domcreate_attach_vtpms(libxl__egc *egc, libxl__multidev *multidev,
                                    int ret);
 static void domcreate_attach_vrtcs(libxl__egc *egc, libxl__multidev *multidev,
                                    int ret);
+static void domcreate_attach_vdrms(libxl__egc *egc, libxl__multidev *multidev,
+                                   int ret);
 static void domcreate_attach_vttys(libxl__egc *egc, libxl__multidev *multidev,
                                    int ret);
 static void domcreate_attach_vsnds(libxl__egc *egc, libxl__multidev *multidev,
@@ -1432,8 +1434,41 @@ static void domcreate_attach_vrtcs(libxl__egc *egc,
    if (d_config->num_vrtcs > 0) {
        /* Attach vrtcs */
        libxl__multidev_begin(ao, &dcs->multidev);
-       dcs->multidev.callback = domcreate_attach_vttys;
+       dcs->multidev.callback = domcreate_attach_vdrms;
        libxl__add_vrtcs(egc, ao, domid, d_config, &dcs->multidev);
+       libxl__multidev_prepared(egc, &dcs->multidev, 0);
+       return;
+   }
+
+   domcreate_attach_vdrms(egc, multidev, 0);
+   return;
+
+error_out:
+   assert(ret);
+   domcreate_complete(egc, dcs, ret);
+}
+
+static void domcreate_attach_vdrms(libxl__egc *egc,
+                                   libxl__multidev *multidev,
+                                   int ret)
+{
+   libxl__domain_create_state *dcs = CONTAINER_OF(multidev, *dcs, multidev);
+   STATE_AO_GC(dcs->ao);
+   int domid = dcs->guest_domid;
+
+   libxl_domain_config* const d_config = dcs->guest_config;
+
+   if(ret) {
+       LOG(ERROR, "unable to add vrtc devices");
+       goto error_out;
+   }
+
+    /* Plug vdrm devices */
+   if (d_config->num_vdrms > 0) {
+       /* Attach vdrms */
+       libxl__multidev_begin(ao, &dcs->multidev);
+       dcs->multidev.callback = domcreate_attach_vttys;
+       libxl__add_vdrms(egc, ao, domid, d_config, &dcs->multidev);
        libxl__multidev_prepared(egc, &dcs->multidev, 0);
        return;
    }
@@ -1446,6 +1481,7 @@ error_out:
    domcreate_complete(egc, dcs, ret);
 }
 
+
 static void domcreate_attach_vttys(libxl__egc *egc,
                                    libxl__multidev *multidev,
                                    int ret)
@@ -1457,7 +1493,7 @@ static void domcreate_attach_vttys(libxl__egc *egc,
    libxl_domain_config* const d_config = dcs->guest_config;
 
    if(ret) {
-       LOG(ERROR, "unable to add vtty devices");
+       LOG(ERROR, "unable to add vdrm devices");
        goto error_out;
    }
 
@@ -1490,7 +1526,7 @@ static void domcreate_attach_vsnds(libxl__egc *egc,
    libxl_domain_config* const d_config = dcs->guest_config;
 
    if(ret) {
-       LOG(ERROR, "unable to add vrtc devices");
+       LOG(ERROR, "unable to add vtty devices");
        goto error_out;
    }
 

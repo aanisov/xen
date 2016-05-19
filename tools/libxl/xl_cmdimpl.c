@@ -1272,7 +1272,7 @@ static void parse_config_data(const char *config_source,
     long l, vcpus = 0;
     XLU_Config *config;
     XLU_ConfigList *cpus, *cpuids, *vbds, *nics, *pcis;
-    XLU_ConfigList *cvfbs, *vevents, *vtpms, *vrtcs, *vttys, *vsnds;
+    XLU_ConfigList *cvfbs, *vevents, *vtpms, *vrtcs, *vttys, *vsnds, *vdrms;
     XLU_ConfigList *channels, *ioports, *irqs, *iomem, *viridian, *dtdevs;
     int num_ioports, num_irqs, num_iomem, num_cpus, num_viridian;
     int pci_power_mgmt = 0;
@@ -1891,6 +1891,58 @@ static void parse_config_data(const char *config_source,
                     vrtc->devid = atoi(value);
                 } else if (!strcmp(key, "device")) {
                     replace_string(&vrtc->device, value);
+                }
+                free(key);
+                free(key_untrimmed);
+                free(value);
+                free(value_untrimmed);
+            }
+            libxl_string_list_dispose(&pairs);
+            free(path);
+        }
+    }
+
+    if (!xlu_cfg_get_list(config, "vdrm", &vdrms, 0, 0)) {
+        d_config->num_vdrms = 0;
+        d_config->vdrms = NULL;
+        while ((buf = xlu_cfg_get_listitem(vdrms, d_config->num_vdrms)) != NULL) {
+            libxl_device_vdrm *vdrm;
+            libxl_string_list pairs;
+            char *path = NULL;
+            int len;
+
+            vdrm = ARRAY_EXTEND_INIT(d_config->vdrms, d_config->num_vdrms,
+                                     libxl_device_vdrm_init);
+
+            split_string_into_string_list(buf, ",", &pairs);
+            len = libxl_string_list_length(&pairs);
+
+            for (i = 0; i < len; i++) {
+                char *key, *key_untrimmed, *value, *value_untrimmed;
+                int rc;
+                rc = split_string_into_pair(pairs[i], "=",
+                                            &key_untrimmed,
+                                            &value_untrimmed);
+                if (rc != 0) {
+                    fprintf(stderr, "failed to parse vdrm configuration: %s",
+                            pairs[i]);
+                    exit(1);
+                }
+                trim(isspace, key_untrimmed, &key);
+                trim(isspace, value_untrimmed, &value);
+
+                if (!strcmp(key, "backendid")) {
+                    vdrm->backend_domid = atoi(value);
+                } else if (!strcmp(key, "backend")) {
+                    replace_string(&vdrm->backend_domname, value);
+                } else if (!strcmp(key, "devid")) {
+                    vdrm->devid = atoi(value);
+                } else if (!strcmp(key, "device")) {
+                    replace_string(&vdrm->device, value);
+                } else if (!strcmp(key, "mode0")) {
+                    replace_string(&vdrm->mode0, value);
+                } else if (!strcmp(key, "mode1")) {
+                    replace_string(&vdrm->mode1, value);
                 }
                 free(key);
                 free(key_untrimmed);
@@ -7084,6 +7136,116 @@ int main_vrtcdetach(int argc, char **argv)
     return rc;
 }
 
+int main_vdrmattach(int argc, char **argv)
+{
+
+    int opt;
+    uint32_t fe_domid;
+    libxl_device_vdrm vdrm;
+    /*  XLU_Config *config = 0; */
+
+    SWITCH_FOREACH_OPT(opt, "", NULL, "vdrm-attach", 2) {
+        /* No options */
+    }
+
+    if (libxl_domain_qualifier_to_domid(ctx, argv[optind], &fe_domid) < 0) {
+        fprintf(stderr, "%s is an invalid domain identifier\n", argv[optind]);
+        return 1;
+    }
+    optind++;
+
+    if (optind < argc) {
+        replace_string(&vdrm.device, argv[optind]);
+    }
+    optind++;
+
+/* TODO: fix this temporary hardcode */
+    vdrm.backend_domname = "Domain-D";
+    vdrm.backend_domid = 1;
+
+    if (dryrun_only) {
+        char *json = libxl_device_vdrm_to_json(ctx, &vdrm);
+        printf("vdrm: %s\n", json);
+        free(json);
+        if (ferror(stdout) || fflush(stdout)) { perror("stdout"); exit(-1); }
+        return 0;
+    }
+
+    if (libxl_device_vdrm_add(ctx, fe_domid, &vdrm, 0)) {
+        fprintf(stderr, "libxl_device_vdrm_add failed.\n");
+        return 1;
+    }
+
+    return 0;
+}
+
+int main_vdrmlist(int argc, char **argv)
+{
+	int opt;
+	int i, nb;
+	libxl_device_vdrm *vdrms;
+	libxl_vdrminfo vdrminfo;
+
+	SWITCH_FOREACH_OPT(opt, "", NULL, "vdrm-list", 1) {
+		/* No options */
+	}
+
+	/* vdrminfo.uuid should be outputted too */
+	printf("%-5s %-3s %-6s %-5s %-6s %-8s %-40s %-40s\n",
+			"Vdev", "BE", "handle", "state", "evt-ch", "ring-ref", "BE-path", "FE-path");
+	for (argv += optind, argc -= optind; argc > 0; --argc, ++argv) {
+		uint32_t domid;
+		if (libxl_domain_qualifier_to_domid(ctx, *argv, &domid) < 0) {
+			fprintf(stderr, "%s is an invalid domain identifier\n", *argv);
+			continue;
+		}
+		vdrms = libxl_device_vdrm_list(ctx, domid, &nb);
+		if (!vdrms) {
+			continue;
+		}
+		for (i=0; i<nb; i++) {
+			if (!libxl_device_vdrm_getinfo(ctx, domid, &vdrms[i], &vdrminfo)) {
+				/*      Vdev BE   hdl  st   evch rref BE-path FE-path UUID */
+				printf("%-5d %-3d %-6d %-5d %-6d %-8d %-40s %-40s\n",
+						vdrminfo.devid, vdrminfo.backend_id, vdrminfo.frontend_id,
+						vdrminfo.state, vdrminfo.evtch, vdrminfo.rref, vdrminfo.backend,
+						vdrminfo.frontend);
+				libxl_vdrminfo_dispose(&vdrminfo);
+			}
+			libxl_device_vdrm_dispose(&vdrms[i]);
+		}
+		free(vdrms);
+	}
+	return 0;
+}
+
+int main_vdrmdetach(int argc, char **argv)
+{
+    uint32_t domid, devid;
+    int opt, rc = 0;
+    libxl_device_vdrm vdrm;
+
+    SWITCH_FOREACH_OPT(opt, "", NULL, "vdrm-detach", 2) {
+        /* No options */
+    }
+
+    domid = find_domain(argv[optind]);
+    devid = atoi(argv[optind+1]);
+
+    if (libxl_devid_to_device_vdrm(ctx, domid, devid, &vdrm)) {
+        fprintf(stderr, "Error: Device %s not connected.\n", argv[optind+1]);
+        return 1;
+    }
+
+    rc = libxl_device_vdrm_remove(ctx, domid, &vdrm, 0);
+    if (rc) {
+        fprintf(stderr, "libxl_device_vdrm_remove failed.\n");
+        return 1;
+    }
+
+    libxl_device_vdrm_dispose(&vdrm);
+    return rc;
+}
 
 int main_vsndattach(int argc, char **argv)
 {
