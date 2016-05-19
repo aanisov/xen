@@ -569,6 +569,13 @@ libxl_device_vdrm = Struct("device_vdrm", [
     ("mode1", string),
     ])
 
+libxl_device_vrpmsg = Struct("device_vrpmsg", [
+    ("backend_domid", libxl_domid),
+    ("backend_domname", string),
+    ("devid", libxl_devid),
+    ("device", string),
+    ])
+
 libxl_device_vsnd = Struct("device_vsnd", [
     ("backend_domid", libxl_domid),
     ("backend_domname", string),
@@ -686,6 +693,7 @@ libxl_domain_config = Struct("domain_config", [
     ("vtpms", Array(libxl_device_vtpm, "num_vtpms")),
     ("vrtcs", Array(libxl_device_vrtc, "num_vrtcs")),
     ("vdrms", Array(libxl_device_vdrm, "num_vdrms")),
+    ("vrpmsgs", Array(libxl_device_vrpmsg, "num_vrpmsgs")),
     ("vsnds", Array(libxl_device_vsnd, "num_vsnds")),
     ("vttys", Array(libxl_device_vtty, "num_vttys")),
     # a channel manifests as a console with a name,
@@ -745,6 +753,17 @@ libxl_vrtcinfo = Struct("vrtcinfo", [
     ], dir=DIR_OUT)
 
 libxl_vdrminfo = Struct("vdrminfo", [
+    ("backend", string),
+    ("backend_id", uint32),
+    ("frontend", string),
+    ("frontend_id", uint32),
+    ("devid", libxl_devid),
+    ("state", integer),
+    ("evtch", integer),
+    ("rref", integer),
+    ], dir=DIR_OUT)
+
+libxl_vrpmsginfo = Struct("vrpmsginfo", [
     ("backend", string),
     ("backend_id", uint32),
     ("frontend", string),

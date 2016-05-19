@@ -83,6 +83,9 @@ int libxl_devid_to_device_vrtc(libxl_ctx *ctx, uint32_t domid,
 int libxl_devid_to_device_vdrm(libxl_ctx *ctx, uint32_t domid,
                                int devid, libxl_device_vdrm *vdrm);
 
+int libxl_devid_to_device_vrpmsg(libxl_ctx *ctx, uint32_t domid,
+                                 int devid, libxl_device_vrpmsg *vrpmsg);
+
 int libxl_devid_to_device_vsnd(libxl_ctx *ctx, uint32_t domid,
                                int devid, libxl_device_vsnd *vsnd);
 

@@ -1469,6 +1469,23 @@ libxl_device_vdrm *libxl_device_vdrm_list(libxl_ctx *ctx, uint32_t domid, int *n
 int libxl_device_vdrm_getinfo(libxl_ctx *ctx, uint32_t domid,
                               libxl_device_vdrm *vdrm, libxl_vdrminfo *vdrminfo);
 
+/* RPMSG */
+int libxl_device_vrpmsg_add(libxl_ctx *ctx, uint32_t domid, libxl_device_vrpmsg *vrpmsg,
+                          const libxl_asyncop_how *ao_how)
+                          LIBXL_EXTERNAL_CALLERS_ONLY;
+int libxl_device_vrpmsg_remove(libxl_ctx *ctx, uint32_t domid,
+                             libxl_device_vrpmsg *vrpmsg,
+                             const libxl_asyncop_how *ao_how)
+                             LIBXL_EXTERNAL_CALLERS_ONLY;
+int libxl_device_vrpmsg_destroy(libxl_ctx *ctx, uint32_t domid,
+                              libxl_device_vrpmsg *vrpmsg,
+                              const libxl_asyncop_how *ao_how)
+                              LIBXL_EXTERNAL_CALLERS_ONLY;
+
+libxl_device_vrpmsg *libxl_device_vrpmsg_list(libxl_ctx *ctx, uint32_t domid, int *num);
+int libxl_device_vrpmsg_getinfo(libxl_ctx *ctx, uint32_t domid,
+                              libxl_device_vrpmsg *vrpmsg, libxl_vrpmsginfo *vrpmsginfo);
+
 /* Audio */
 int libxl_device_vsnd_add(libxl_ctx *ctx, uint32_t domid, libxl_device_vsnd *vsnd,
                           const libxl_asyncop_how *ao_how)
