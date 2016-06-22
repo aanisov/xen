@@ -252,7 +252,7 @@ static void allocate_memory_11(struct domain *d, struct kernel_info *kinfo)
     unsigned int order = get_11_allocation_size(kinfo->unassigned_mem);
     int i;
 
-    bool_t lowmem = is_32bit_domain(d);
+    bool_t lowmem = 1;
     unsigned int bits;
 
     printk("Allocating 1:1 mappings totalling %ldMB for dom0:\n",
