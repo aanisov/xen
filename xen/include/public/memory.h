@@ -51,6 +51,12 @@
 /* NUMA node to allocate from. */
 #define XENMEMF_node(x)     (((x) + 1) << 8)
 #define XENMEMF_get_node(x) ((((x) >> 8) - 1) & 0xffu)
+#ifdef ARM32_SEPAR_MEM_SPLIT
+/* Flag to populate physmap only from low 4GB memory space */
+#define XENMEMF_only_low_mem (1<<6)
+/* Flag to populate physmap only from over 4GB memory space */
+#define XENMEMF_only_high_mem (1<<7)
+#endif
 /* Flag to populate physmap with populate-on-demand entries */
 #define XENMEMF_populate_on_demand (1<<16)
 /* Flag to request allocation only from the node specified */

@@ -907,6 +907,16 @@ long do_memory_op(unsigned long cmd, XEN_GUEST_HANDLE_PARAM(void) arg)
              && (reservation.mem_flags & XENMEMF_populate_on_demand) )
             args.memflags |= MEMF_populate_on_demand;
 
+#ifdef ARM32_SEPAR_MEM_SPLIT
+        if ( op == XENMEM_populate_physmap
+                && ( reservation.mem_flags & XENMEMF_only_low_mem) )
+            args.memflags |= MEMF_only_low_mem;
+
+        if ( op == XENMEM_populate_physmap
+                && ( reservation.mem_flags & XENMEMF_only_high_mem) )
+            args.memflags |= MEMF_only_high_mem;
+#endif
+
         if ( xsm_memory_adjust_reservation(XSM_TARGET, current->domain, d) )
         {
             rcu_unlock_domain(d);

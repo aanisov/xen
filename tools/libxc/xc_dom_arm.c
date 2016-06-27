@@ -324,8 +324,19 @@ static int populate_one_size(struct xc_dom_image *dom, int pfn_shift,
     for ( i = 0 ; i < count ; i ++ )
         extents[i] = base_pfn + (i<<pfn_shift);
 
+#ifdef ARM32_SEPAR_MEM_SPLIT
+	if (base_pfn < 0x100000) { /* base_pfn less then 4GB */
+		nr = xc_domain_populate_physmap(dom->xch, dom->guest_domid, count,
+									pfn_shift, XENMEMF_only_low_mem, extents);
+	} else {
+		nr = xc_domain_populate_physmap(dom->xch, dom->guest_domid, count,
+									pfn_shift, XENMEMF_only_high_mem, extents);
+	}
+#else
     nr = xc_domain_populate_physmap(dom->xch, dom->guest_domid, count,
                                     pfn_shift, 0, extents);
+#endif
+
     if ( nr <= 0 ) return nr;
     DOMPRINTF("%s: populated %#x/%#x entries with shift %d",
               __FUNCTION__, nr, count, pfn_shift);
@@ -514,7 +525,7 @@ static void fixup_dom_memories(struct xc_dom_image *dom, uint64_t *base)
     curr->count = aligned_size >> XC_PAGE_SHIFT;
 
     base[0] = aligned_start;
-    dom->rambank_size[0] = (uint64_t)curr->count;
+    dom->rambank_size_low[0] = (uint64_t)curr->count;
     dom->kernel_seg.vstart = base[0] + zimage->text_offset;
     dom->kernel_seg.vend = dom->kernel_seg.vstart + dom->kernel_size;
     dom->parms.virt_entry = dom->kernel_seg.vstart;
@@ -548,7 +559,11 @@ static int meminit(struct xc_dom_image *dom)
     xen_pfn_t pfn;
     uint64_t modbase;
 
+#ifndef ARM32_SEPAR_MEM_SPLIT
     uint64_t ramsize = (uint64_t)dom->total_pages << XC_PAGE_SHIFT;
+#else
+    uint64_t ramsize = (uint64_t)dom->low_mem_pages << XC_PAGE_SHIFT;
+#endif
 
     uint64_t bankbase[] = GUEST_RAM_BANK_BASES;
     const uint64_t bankmax[] = GUEST_RAM_BANK_SIZES;
@@ -602,11 +617,40 @@ static int meminit(struct xc_dom_image *dom)
 
         p2m_size = 0x780000/*( bankbase[i] + banksize - bankbase[0] ) >> XC_PAGE_SHIFT*/;
 
+#ifndef ARM32_SEPAR_MEM_SPLIT
         dom->rambank_size[i] = banksize >> XC_PAGE_SHIFT;
+#else
+        dom->rambank_size_low[i] = banksize >> XC_PAGE_SHIFT;
+#endif
     }
 
+#ifndef ARM32_SEPAR_MEM_SPLIT
     assert(dom->rambank_size[0] != 0);
+#else
+    assert(dom->rambank_size_low[0] != 0);
+#endif
+
     assert(ramsize == 0); /* Too much RAM is rejected above */
+
+#ifdef ARM32_SEPAR_MEM_SPLIT
+	ramsize = (uint64_t)dom->high_mem_pages << XC_PAGE_SHIFT;
+
+	if (ramsize) {
+		for ( i = 0; ramsize && i < GUEST_RAM_BANKS; i++ )
+		{
+			uint64_t banksize = ramsize > bankmax[i] ? bankmax[i] : ramsize;
+
+			ramsize -= banksize;
+			p2m_size += ( bankbase[1] + banksize - bankbase[1] ) >> XC_PAGE_SHIFT;
+
+			dom->rambank_size_high[i] = banksize >> XC_PAGE_SHIFT;
+			DOMPRINTF("%s: rambank_size_high: %"PRIx64, __FUNCTION__, dom->rambank_size_high[i]);
+		}
+
+		assert(ramsize == 0);
+		assert(dom->rambank_size_high[0] != 0);
+	}
+#endif
 
     dom->p2m_size = p2m_size;
     dom->p2m_host = xc_dom_malloc(dom, sizeof(xen_pfn_t) * p2m_size);
@@ -616,6 +660,7 @@ static int meminit(struct xc_dom_image *dom)
         dom->p2m_host[pfn] = INVALID_PFN;
 
     /* setup initial p2m and allocate guest memory */
+#ifndef ARM32_SEPAR_MEM_SPLIT
     for ( i = 0; i < GUEST_RAM_BANKS && dom->rambank_size[i]; i++ )
     {
         if ((rc = populate_guest_memory(dom,
@@ -623,7 +668,23 @@ static int meminit(struct xc_dom_image *dom)
                                         dom->rambank_size[i])))
             return rc;
     }
+#else
+	for ( i = 0; i < GUEST_RAM_BANKS && dom->rambank_size_low[i]; i++ )
+	{
+		if ((rc = populate_guest_memory(dom,
+										bankbase[i] >> XC_PAGE_SHIFT,
+										dom->rambank_size_low[i])))
+			return rc;
+	}
 
+	for ( i = 0; i < GUEST_RAM_BANKS && dom->rambank_size_high[i]; i++ )
+	{
+		if ((rc = populate_guest_memory(dom,
+										bankbase[1] >> XC_PAGE_SHIFT,
+										dom->rambank_size_high[i])))
+			return rc;
+	}
+#endif
     optimize_memory_banks(dom, bankbase);
 
     ram128mb = bankbase[0] + (128<<20);
@@ -636,7 +697,11 @@ static int meminit(struct xc_dom_image *dom)
      * If changing this then consider
      * xen/arch/arm/kernel.c:place_modules as well.
      */
+#ifndef ARM32_SEPAR_MEM_SPLIT
     bank0end = bankbase[0] + ((uint64_t)dom->rambank_size[0] << XC_PAGE_SHIFT);
+#else
+    bank0end = bankbase[0] + ((uint64_t)dom->rambank_size_low[0] << XC_PAGE_SHIFT);
+#endif
 
     if ( bank0end >= ram128mb + modsize && kernend < ram128mb )
         modbase = ram128mb;

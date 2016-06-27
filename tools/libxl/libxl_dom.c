@@ -405,8 +405,11 @@ int libxl__build_pre(libxl__gc *gc, uint32_t domid,
             }
         }
     }
-
+#ifndef ARM32_SEPAR_MEM_SPLIT
     if (xc_domain_setmaxmem(ctx->xch, domid, info->target_memkb +
+#else
+    if (xc_domain_setmaxmem(ctx->xch, domid, info->target_memkb + info->target_memkb_high +
+#endif
         LIBXL_MAXMEM_CONSTANT) < 0) {
         LOGE(ERROR, "Couldn't set max memory");
         return ERROR_FAIL;
@@ -524,10 +527,17 @@ int libxl__build_post(libxl__gc *gc, uint32_t domid,
 
     ents = libxl__calloc(gc, 12 + (info->max_vcpus * 2) + 2, sizeof(char *));
     ents[0] = "memory/static-max";
-    ents[1] = GCSPRINTF("%"PRId64, info->max_memkb);
+    ents[1] = GCSPRINTF("%"PRId64, info->max_memkb
+#ifdef ARM32_SEPAR_MEM_SPLIT
+                        + info->target_memkb_high
+#endif
+    );
     ents[2] = "memory/target";
-    ents[3] = GCSPRINTF("%"PRId64, info->target_memkb -
-                        libxl__get_targetmem_fudge(gc, info));
+    ents[3] = GCSPRINTF("%"PRId64, info->target_memkb
+#ifdef ARM32_SEPAR_MEM_SPLIT
+                        + info->target_memkb_high
+#endif
+                        - libxl__get_targetmem_fudge(gc, info));
     ents[4] = "memory/videoram";
     ents[5] = GCSPRINTF("%"PRId64, info->video_memkb);
     ents[6] = "domid";
@@ -636,7 +646,11 @@ static int libxl__build_dom(libxl__gc *gc, uint32_t domid,
 
     mem_kb = dom->container_type == XC_DOM_HVM_CONTAINER ?
              (info->max_memkb - info->video_memkb) : info->target_memkb;
+#ifndef ARM32_SEPAR_MEM_SPLIT
     if ( (ret = xc_dom_mem_init(dom, mem_kb / 1024)) != 0 ) {
+#else
+    if ( (ret = xc_dom_mem_init(dom, mem_kb / 1024, info->target_memkb_high / 1024)) != 0 ) {
+#endif
         LOGE(ERROR, "xc_dom_mem_init failed");
         goto out;
     }

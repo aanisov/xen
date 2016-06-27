@@ -147,7 +147,11 @@ static int build(xc_interface *xch)
         fprintf(stderr, "xc_dom_parse_image failed\n");
         goto err;
     }
+#ifndef ARM32_SEPAR_MEM_SPLIT
     rv = xc_dom_mem_init(dom, memory);
+#else
+    rv = xc_dom_mem_init(dom, memory, 0);
+#endif
     if ( rv )
     {
         fprintf(stderr, "xc_dom_mem_init failed\n");

@@ -110,6 +110,8 @@ CFLAGS   += -D__XEN_TOOLS__
 # Needed for posix_fadvise64() in xc_linux.c
 CFLAGS-$(CONFIG_Linux) += -D_GNU_SOURCE
 
+CFLAGS-$(ARM32_SEPAR_MEM_SPLIT) += -DARM32_SEPAR_MEM_SPLIT
+
 CFLAGS	+= $(PTHREAD_CFLAGS)
 CFLAGS	+= $(CFLAGS_libxentoollog)
 CFLAGS	+= $(CFLAGS_libxenevtchn)

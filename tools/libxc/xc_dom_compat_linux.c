@@ -67,7 +67,11 @@ int xc_linux_build(xc_interface *xch, uint32_t domid,
         goto out;
     if ( (rc = xc_dom_parse_image(dom)) != 0 )
         goto out;
+#ifndef ARM32_SEPAR_MEM_SPLIT
     if ( (rc = xc_dom_mem_init(dom, mem_mb)) != 0 )
+#else
+    if ( (rc = xc_dom_mem_init(dom, mem_mb, 0)) != 0 )
+#endif
         goto out;
     if ( (rc = xc_dom_boot_mem_init(dom)) != 0 )
         goto out;

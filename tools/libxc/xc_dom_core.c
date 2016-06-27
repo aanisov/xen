@@ -444,12 +444,12 @@ void *xc_dom_pfn_to_ptr_retcount(struct xc_dom_image *dom, xen_pfn_t pfn,
     *count_out = 0;
 
     offset = pfn - dom->rambase_pfn;
-    if ( offset > dom->total_pages || /* multiple checks to avoid overflows */
-         count > dom->total_pages ||
-         offset > dom->total_pages - count )
+    if ( offset > XC_DOM_TOTAL_PAGES(dom) || /* multiple checks to avoid overflows */
+         count > XC_DOM_TOTAL_PAGES(dom) ||
+         offset > XC_DOM_TOTAL_PAGES(dom) - count )
     {
         DOMPRINTF("%s: pfn %"PRI_xen_pfn" out of range (0x%" PRIpfn " > 0x%" PRIpfn ")",
-                  __FUNCTION__, pfn, offset, dom->total_pages);
+                  __FUNCTION__, pfn, offset, XC_DOM_TOTAL_PAGES(dom));
         return NULL;
     }
 
@@ -547,14 +547,14 @@ static int xc_dom_chk_alloc_pages(struct xc_dom_image *dom, char *name,
 {
     unsigned int page_size = XC_DOM_PAGE_SIZE(dom);
 
-    if ( pages > dom->total_pages || /* multiple test avoids overflow probs */
-         dom->pfn_alloc_end - dom->rambase_pfn > dom->total_pages ||
-         pages > dom->total_pages - dom->pfn_alloc_end + dom->rambase_pfn )
+    if ( pages > XC_DOM_TOTAL_PAGES(dom) || /* multiple test avoids overflow probs */
+         dom->pfn_alloc_end - dom->rambase_pfn > XC_DOM_TOTAL_PAGES(dom) ||
+         pages > XC_DOM_TOTAL_PAGES(dom) - dom->pfn_alloc_end + dom->rambase_pfn )
     {
         xc_dom_panic(dom->xch, XC_OUT_OF_MEMORY,
                      "%s: segment %s too large (0x%"PRIpfn" > "
                      "0x%"PRIpfn" - 0x%"PRIpfn" pages)", __FUNCTION__, name,
-                     pages, dom->total_pages,
+                     pages, XC_DOM_TOTAL_PAGES(dom),
                      dom->pfn_alloc_end - dom->rambase_pfn);
         return -1;
     }
@@ -939,6 +939,7 @@ int xc_dom_rambase_init(struct xc_dom_image *dom, uint64_t rambase)
     return 0;
 }
 
+#ifndef ARM32_SEPAR_MEM_SPLIT
 int xc_dom_mem_init(struct xc_dom_image *dom, unsigned int mem_mb)
 {
     unsigned int page_shift;
@@ -963,6 +964,39 @@ int xc_dom_mem_init(struct xc_dom_image *dom, unsigned int mem_mb)
 
     return 0;
 }
+#else
+int xc_dom_mem_init(struct xc_dom_image *dom, unsigned int mem_mb_low, unsigned int mem_mb_high)
+{
+	unsigned int page_shift;
+	xen_pfn_t nr_pages_low;
+	xen_pfn_t nr_pages_high;
+
+    if ( xc_dom_set_arch_hooks(dom) )
+    {
+        xc_dom_panic(dom->xch, XC_INTERNAL_ERROR, "%s: arch hooks not set",
+                     __FUNCTION__);
+        return -1;
+    }
+
+	page_shift = XC_DOM_PAGE_SHIFT(dom);
+	nr_pages_low = mem_mb_low << (20 - page_shift);
+	nr_pages_high = mem_mb_high << (20 - page_shift);
+
+	DOMPRINTF("%s: mem %d MB, low pages 0x%" PRIpfn " pages, %dk each",
+			   __FUNCTION__, mem_mb_low, nr_pages_low, 1 << (page_shift-10));
+
+	DOMPRINTF("%s: mem %d MB, high pages 0x%" PRIpfn " pages, %dk each",
+			   __FUNCTION__, mem_mb_high, nr_pages_high, 1 << (page_shift-10));
+
+	dom->low_mem_pages = nr_pages_low;
+	dom->high_mem_pages = nr_pages_high;
+
+	DOMPRINTF("%s: Total pages 0x%" PRIpfn,
+			  __FUNCTION__, XC_DOM_TOTAL_PAGES(dom));
+
+	return 0;
+}
+#endif
 
 int xc_dom_update_guest_p2m(struct xc_dom_image *dom)
 {

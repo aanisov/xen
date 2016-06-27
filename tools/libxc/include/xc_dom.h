@@ -147,13 +147,23 @@ struct xc_dom_image {
      * in rambase_pfn.
      */
     xen_pfn_t rambase_pfn;
+#ifndef ARM32_SEPAR_MEM_SPLIT
     xen_pfn_t total_pages;
+#else
+    xen_pfn_t low_mem_pages;
+    xen_pfn_t high_mem_pages;
+#endif
     xen_pfn_t p2m_size;         /* number of pfns covered by p2m */
     struct xc_dom_phys *phys_pages;
 #if defined (__arm__) || defined(__aarch64__)
     /*List of memory banks*/
     struct xc_dom_membank *memory_banks;
+#ifndef ARM32_SEPAR_MEM_SPLIT
     xen_pfn_t rambank_size[GUEST_RAM_BANKS];
+#else
+    xen_pfn_t rambank_size_low[GUEST_RAM_BANKS];
+    xen_pfn_t rambank_size_high[GUEST_RAM_BANKS];
+#endif
 #endif
 
     /* malloc memory pool */
@@ -255,6 +265,11 @@ struct hvm_modlist_entry {
 } __attribute__((packed));
 #endif /* x86 */
 
+#ifndef ARM32_SEPAR_MEM_SPLIT
+#define XC_DOM_TOTAL_PAGES(dom) ((dom)->total_pages)
+#else
+#define XC_DOM_TOTAL_PAGES(dom) ((dom)->low_mem_pages + (dom)->high_mem_pages)
+#endif
 /* --- pluggable kernel loader ------------------------------------- */
 
 struct xc_dom_loader {
@@ -310,7 +325,11 @@ struct xc_dom_image *xc_dom_allocate(xc_interface *xch,
 void xc_dom_release_phys(struct xc_dom_image *dom);
 void xc_dom_release(struct xc_dom_image *dom);
 int xc_dom_rambase_init(struct xc_dom_image *dom, uint64_t rambase);
+#ifndef ARM32_SEPAR_MEM_SPLIT
 int xc_dom_mem_init(struct xc_dom_image *dom, unsigned int mem_mb);
+#else
+int xc_dom_mem_init(struct xc_dom_image *dom, unsigned int mem_mb_low, unsigned int mem_mb_high);
+#endif
 
 /* Set this larger if you have enormous ramdisks/kernels. Note that
  * you should trust all kernels not to be maliciously large (e.g. to
@@ -458,7 +477,7 @@ static inline xen_pfn_t xc_dom_p2m(struct xc_dom_image *dom, xen_pfn_t pfn)
 {
     if ( dom->shadow_enabled || xc_dom_feature_translated(dom) )
         return pfn;
-    if (pfn < dom->rambase_pfn || pfn >= dom->rambase_pfn + dom->total_pages)
+    if (pfn < dom->rambase_pfn || pfn >= dom->rambase_pfn + XC_DOM_TOTAL_PAGES(dom))
         return INVALID_MFN;
     return dom->p2m_host[pfn - dom->rambase_pfn];
 }
