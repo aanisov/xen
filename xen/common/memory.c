@@ -169,6 +169,7 @@ static void populate_physmap(struct memop_args *a)
         }
         else
         {
+#if 0
             if ( is_domain_direct_mapped(d) )
             {
                 mfn = gpfn;
@@ -197,6 +198,7 @@ static void populate_physmap(struct memop_args *a)
                 page = mfn_to_page(mfn);
             }
             else
+#endif
             {
                 page = alloc_domheap_pages(d, a->extent_order, a->memflags);
 
@@ -213,9 +215,18 @@ static void populate_physmap(struct memop_args *a)
                 mfn = page_to_mfn(page);
             }
 
+            if(is_domain_11_notallocated(d))
+            {
+                if(!(( gpfn >= (GUEST_MAGIC_BASE >> PAGE_SHIFT) ) &&
+                    (gpfn < ((GUEST_MAGIC_BASE + 3 * PAGE_SIZE) >> PAGE_SHIFT ))))
+                    gpfn = mfn;
+                if(gpfn == ((GUEST_MAGIC_BASE + 2 * PAGE_SIZE) >> PAGE_SHIFT ))
+                    d->is_11_mem_allocated = true;
+            }
+
             guest_physmap_add_page(d, gpfn, mfn, a->extent_order);
 
-            if ( !paging_mode_translate(d) )
+            if ( !paging_mode_translate(d) || is_domain_11_notallocated(d) )
             {
                 for ( j = 0; j < (1U << a->extent_order); j++ )
                     set_gpfn_from_mfn(mfn + j, gpfn + j);

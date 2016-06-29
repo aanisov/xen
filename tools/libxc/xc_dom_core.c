@@ -265,6 +265,13 @@ void *xc_dom_malloc_filemap(struct xc_dom_image *dom,
 static void xc_dom_free_all(struct xc_dom_image *dom)
 {
     struct xc_dom_mem *block;
+    struct xc_dom_membank *bank;
+
+    while ( (bank = dom->memory_banks) != NULL )
+    {
+        dom->memory_banks = bank->next;
+        free(bank);
+    }
 
     while ( (block = dom->memblocks) != NULL )
     {

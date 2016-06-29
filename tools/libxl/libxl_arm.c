@@ -24,6 +24,8 @@
 #define DT_IRQ_TYPE_LEVEL_HIGH     0x00000004
 #define DT_IRQ_TYPE_LEVEL_LOW      0x00000008
 
+#define CONFIG_ARM_NR_BANKS 32
+
 static const char *gicv_to_string(uint8_t gic_version)
 {
     switch (gic_version) {
@@ -388,28 +390,25 @@ static int make_psci_node(libxl__gc *gc, void *fdt)
 static int make_memory_nodes(libxl__gc *gc, void *fdt,
                              const struct xc_dom_image *dom)
 {
-    int res, i;
+    int res;
     const char *name;
-    const uint64_t bankbase[] = GUEST_RAM_BANK_BASES;
+    uint32_t regs[CONFIG_ARM_NR_BANKS * (ROOT_ADDRESS_CELLS + ROOT_SIZE_CELLS)] = { 0 };
 
-    for (i = 0; i < GUEST_RAM_BANKS; i++) {
-        name = GCSPRINTF("memory@%"PRIx64, bankbase[i]);
+    name = GCSPRINTF("memory@%"PRIx64, (uint64_t)0);
 
-        LOG(DEBUG, "Creating placeholder node /%s", name);
+    LOG(DEBUG, "Creating placeholder node /%s", name);
 
-        res = fdt_begin_node(fdt, name);
-        if (res) return res;
+    res = fdt_begin_node(fdt, name);
+    if (res) return res;
 
-        res = fdt_property_string(fdt, "device_type", "memory");
-        if (res) return res;
+    res = fdt_property_string(fdt, "device_type", "memory");
+    if (res) return res;
 
-        res = fdt_property_regs(gc, fdt, ROOT_ADDRESS_CELLS, ROOT_SIZE_CELLS,
-                                1, 0, 0);
-        if (res) return res;
+    res = fdt_property(fdt, "reg", regs, sizeof(regs));
+    if (res) return res;
 
-        res = fdt_end_node(fdt);
-        if (res) return res;
-    }
+    res = fdt_end_node(fdt);
+    if (res) return res;
 
     return 0;
 }
@@ -916,29 +915,43 @@ out:
     return rc;
 }
 
-static void finalise_one_memory_node(libxl__gc *gc, void *fdt,
-                                     uint64_t base, uint64_t size)
+static void finalise_memory_nodes(libxl__gc *gc, void *fdt,
+                                     struct xc_dom_image *dom)
 {
-    int node, res;
-    const char *name = GCSPRINTF("/memory@%"PRIx64, base);
+    uint32_t regs[(ROOT_ADDRESS_CELLS + ROOT_SIZE_CELLS) * CONFIG_ARM_NR_BANKS];
+    be32 *cells = &regs[0];
+    struct xc_dom_membank *bank = dom->memory_banks;
+    int i = 0, node, res;
+    const char *name = GCSPRINTF("/memory@%"PRIx64, (uint64_t)0);
 
     node = fdt_path_offset(fdt, name);
     assert(node > 0);
 
-    if (size == 0) {
-        LOG(DEBUG, "Nopping out placeholder node %s", name);
-        fdt_nop_node(fdt, node);
-    } else {
-        uint32_t regs[ROOT_ADDRESS_CELLS+ROOT_SIZE_CELLS];
-        be32 *cells = &regs[0];
+     while( (i < CONFIG_ARM_NR_BANKS) && bank )
+     {
+         if( bank->first >= dom->rambase_pfn )
+         {
+             set_range(&cells, ROOT_ADDRESS_CELLS, ROOT_SIZE_CELLS,
+                   (uint64_t)bank->first << XC_PAGE_SHIFT,
+                   (uint64_t)bank->count << XC_PAGE_SHIFT);
+             i++;
+         }
+         bank = bank->next;
+     }
 
-        LOG(DEBUG, "Populating placeholder node %s", name);
 
-        set_range(&cells, ROOT_ADDRESS_CELLS, ROOT_SIZE_CELLS, base, size);
+    if( (i == CONFIG_ARM_NR_BANKS) && bank )
+        LOG(WARN, "Domain has more memory banks then %d,"
+                  " all memory banks over %d will be ignored. \n"
+                  "To use all banks, enlarge CONFIG_ARM_NR_BANKS"
+                  " in Xen and DomU kernel.\n",
+		          CONFIG_ARM_NR_BANKS, CONFIG_ARM_NR_BANKS);
 
-        res = fdt_setprop_inplace(fdt, node, "reg", regs, sizeof(regs));
-        assert(!res);
-    }
+    for(; i < CONFIG_ARM_NR_BANKS; i++)
+        set_range(&cells, ROOT_ADDRESS_CELLS, ROOT_SIZE_CELLS, 0, 0);
+
+    res = fdt_setprop_inplace(fdt, node, "reg", regs, sizeof(regs));
+    assert(!res);
 }
 
 int libxl__arch_domain_finalise_hw_description(libxl__gc *gc,
@@ -946,8 +959,6 @@ int libxl__arch_domain_finalise_hw_description(libxl__gc *gc,
                                                struct xc_dom_image *dom)
 {
     void *fdt = dom->devicetree_blob;
-    int i;
-    const uint64_t bankbase[] = GUEST_RAM_BANK_BASES;
 
     const struct xc_dom_seg *ramdisk = dom->ramdisk_blob ?
         &dom->ramdisk_seg : NULL;
@@ -980,11 +991,7 @@ int libxl__arch_domain_finalise_hw_description(libxl__gc *gc,
 
     }
 
-    for (i = 0; i < GUEST_RAM_BANKS; i++) {
-        const uint64_t size = (uint64_t)dom->rambank_size[i] << XC_PAGE_SHIFT;
-
-        finalise_one_memory_node(gc, fdt, bankbase[i], size);
-    }
+    finalise_memory_nodes(gc, fdt, dom);
 
     debug_dump_fdt(gc, fdt);
 

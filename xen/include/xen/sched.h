@@ -848,6 +848,7 @@ void watchdog_domain_destroy(struct domain *d);
 
 /* This check is for is allowed 1:1 mapping for domain */
 #define is_domain_allowed_11_map(_d) ((_d)->is_allowed_11_mapping)
+#define is_domain_11_notallocated(_d) (is_domain_allowed_11_map(_d) && !_d->is_11_mem_allocated)
 
 #define VM_ASSIST(d, t) (test_bit(VMASST_TYPE_ ## t, &(d)->vm_assist))
 

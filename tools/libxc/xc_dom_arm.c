@@ -245,6 +245,42 @@ static int set_mode(xc_interface *xch, domid_t domid, char *guest_type)
     return rc;
 }
 
+static int add_memory_bank(struct xc_dom_image *dom,
+                            xen_pfn_t pfn, xen_pfn_t count)
+{
+    struct xc_dom_membank *bank = malloc(sizeof(*bank));
+    if ( bank == NULL )
+    {
+        DOMPRINTF("%s: allocation failed", __FUNCTION__);
+        return -ENOMEM;
+    }
+
+    bank->first = pfn;
+    bank->count = count;
+    bank->next = dom->memory_banks;
+    dom->memory_banks = bank;
+
+	return 0;
+}
+
+static int add_memory_banks(struct xc_dom_image *dom, int nr,
+                            xen_pfn_t *extents, int pfn_shift)
+{
+    int i;
+
+    if( nr <= 0 )
+        return 0;
+
+    for(i = 0; i < nr; i++)
+    {
+        int res = add_memory_bank(dom, extents[i], 1 << pfn_shift);
+        if( res != 0 )
+            return res;
+    }
+
+    return 0;
+}
+
 /*  >0: success, *nr_pfns set to number actually populated
  *   0: didn't try with this pfn shift (e.g. misaligned base etc)
  *  <0: ERROR
@@ -261,7 +297,7 @@ static int populate_one_size(struct xc_dom_image *dom, int pfn_shift,
     const xen_pfn_t next_boundary
         = (base_pfn + ((uint64_t)1<<next_shift)) & ~next_mask;
 
-    int nr, i, count;
+    int nr, i, count, err;
     xen_pfn_t end_pfn = base_pfn + *nr_pfns;
 
     /* No level zero super pages with current hardware */
@@ -293,6 +329,10 @@ static int populate_one_size(struct xc_dom_image *dom, int pfn_shift,
     if ( nr <= 0 ) return nr;
     DOMPRINTF("%s: populated %#x/%#x entries with shift %d",
               __FUNCTION__, nr, count, pfn_shift);
+
+    err = add_memory_banks(dom, nr, extents, pfn_shift);
+    if( err < 0 )
+        return err;
 
     *nr_pfns = nr << pfn_shift;
 
@@ -390,6 +430,118 @@ out:
     return rc < 0 ? rc : 0;
 }
 
+static void squash_memory_banks(struct xc_dom_image *dom)
+{
+    struct xc_dom_membank *curr = dom->memory_banks, *n;
+
+    while( curr )
+        if( curr->next && (curr->first + curr->count) == curr->next->first )
+        {
+            n = curr->next->next;
+            curr->count += curr->next->count;
+            free(curr->next);
+            curr->next = n;
+        }
+        else
+            curr = curr->next;
+}
+
+static void sort_memory_banks(struct xc_dom_image *dom)
+{
+    struct xc_dom_membank *curr = dom->memory_banks, *prev, **change;
+
+    while( curr )
+        if( curr->next && (curr->first > curr->next->first) )
+        {
+            prev = dom->memory_banks;
+            while( prev && (prev->next != curr) && (prev != curr))
+                prev = prev->next;
+            if( prev )
+            {
+                if( curr == dom->memory_banks)
+                    change = &dom->memory_banks;
+                else
+                    change = &prev->next;
+
+                *change = curr->next;
+                curr->next = (*change)->next;
+                (*change)->next = curr;
+                curr = prev;
+            }
+        }
+        else
+            curr = curr->next;
+}
+
+//Domain alignment is 64MB
+#define DOM_ALIGN (1 << 26)
+#define DOM_ALIGN_FIXUP (DOM_ALIGN - 1)
+#define DOM_ALIGN_MASK (~DOM_ALIGN_FIXUP)
+#define DOM_ALIGN_DOWN(x) ((x) & DOM_ALIGN_MASK)
+#define DOM_ALIGN_UP(x) (DOM_ALIGN_DOWN((x) + DOM_ALIGN_FIXUP))
+struct zimage64_hdr {
+    uint32_t magic0;
+    uint32_t res0;
+    uint64_t text_offset;  /* Image load offset */
+    uint64_t res1;
+    uint64_t res2;
+    /* zImage V1 only from here */
+    uint64_t res3;
+    uint64_t res4;
+    uint64_t res5;
+    uint32_t magic1;
+    uint32_t res6;
+};
+static void fixup_dom_memories(struct xc_dom_image *dom, uint64_t *base)
+{
+    struct xc_dom_membank *curr;
+    uint64_t aligned_start;
+    uint64_t aligned_size;
+    struct zimage64_hdr *zimage = dom->kernel_blob;
+
+    for(curr = dom->memory_banks; curr; curr = curr->next)
+    {
+        aligned_start = DOM_ALIGN_UP(curr->first << XC_PAGE_SHIFT);
+        aligned_size = (curr->count << XC_PAGE_SHIFT) - aligned_start + (curr->first << XC_PAGE_SHIFT);
+        if( aligned_size > dom->kernel_size )
+            break;
+    }
+
+    if( curr == NULL)
+        return;
+
+    curr->first = aligned_start >> XC_PAGE_SHIFT;
+    curr->count = aligned_size >> XC_PAGE_SHIFT;
+
+    base[0] = aligned_start;
+    dom->rambank_size[0] = (uint64_t)curr->count;
+    dom->kernel_seg.vstart = base[0] + zimage->text_offset;
+    dom->kernel_seg.vend = dom->kernel_seg.vstart + dom->kernel_size;
+    dom->parms.virt_entry = dom->kernel_seg.vstart;
+    dom->parms.virt_base = base[0];
+    dom->pfn_alloc_end += curr->first - dom->rambase_pfn;
+    dom->rambase_pfn = curr->first;
+}
+
+static void optimize_memory_banks(struct xc_dom_image *dom, uint64_t *base)
+{
+    struct xc_dom_membank *curr;
+    xen_pfn_t pfn;
+
+    if( dom->memory_banks == NULL )
+        return;
+
+    squash_memory_banks(dom);
+    sort_memory_banks(dom);
+    squash_memory_banks(dom);
+    fixup_dom_memories(dom, base);
+
+    for(curr = dom->memory_banks; curr; curr = curr->next)
+        for ( pfn = curr->first; pfn < (curr->first + curr->count); pfn++ )
+                dom->p2m_host[pfn - (base[0] >> XC_PAGE_SHIFT)] = pfn;
+
+}
+
 static int meminit(struct xc_dom_image *dom)
 {
     int i, rc;
@@ -398,7 +550,7 @@ static int meminit(struct xc_dom_image *dom)
 
     uint64_t ramsize = (uint64_t)dom->total_pages << XC_PAGE_SHIFT;
 
-    const uint64_t bankbase[] = GUEST_RAM_BANK_BASES;
+    uint64_t bankbase[] = GUEST_RAM_BANK_BASES;
     const uint64_t bankmax[] = GUEST_RAM_BANK_SIZES;
 
     /* Convenient */
@@ -410,12 +562,10 @@ static int meminit(struct xc_dom_image *dom)
     const uint64_t ramdisk_size = dom->ramdisk_blob ?
         ROUNDUP(dom->ramdisk_size, XC_PAGE_SHIFT) : 0;
     const uint64_t modsize = dtb_size + ramdisk_size;
-    const uint64_t ram128mb = bankbase[0] + (128<<20);
+    uint64_t ram128mb;
 
     xen_pfn_t p2m_size;
     uint64_t bank0end;
-
-    assert(dom->rambase_pfn << XC_PAGE_SHIFT == bankbase[0]);
 
     if ( modsize + kernsize > bankmax[0] )
     {
@@ -450,7 +600,7 @@ static int meminit(struct xc_dom_image *dom)
 
         ramsize -= banksize;
 
-        p2m_size = ( bankbase[i] + banksize - bankbase[0] ) >> XC_PAGE_SHIFT;
+        p2m_size = 0x780000/*( bankbase[i] + banksize - bankbase[0] ) >> XC_PAGE_SHIFT*/;
 
         dom->rambank_size[i] = banksize >> XC_PAGE_SHIFT;
     }
@@ -473,6 +623,10 @@ static int meminit(struct xc_dom_image *dom)
                                         dom->rambank_size[i])))
             return rc;
     }
+
+    optimize_memory_banks(dom, bankbase);
+
+    ram128mb = bankbase[0] + (128<<20);
 
     /*
      * We try to place dtb+initrd at 128MB or if we have less RAM

@@ -56,6 +56,12 @@ struct xc_dom_phys {
     xen_pfn_t count;
 };
 
+struct xc_dom_membank {
+    struct xc_dom_membank *next;
+    xen_pfn_t first;
+    xen_pfn_t count;
+};
+
 struct xc_dom_image {
     /* files */
     void *kernel_blob;
@@ -145,6 +151,8 @@ struct xc_dom_image {
     xen_pfn_t p2m_size;         /* number of pfns covered by p2m */
     struct xc_dom_phys *phys_pages;
 #if defined (__arm__) || defined(__aarch64__)
+    /*List of memory banks*/
+    struct xc_dom_membank *memory_banks;
     xen_pfn_t rambank_size[GUEST_RAM_BANKS];
 #endif
 
