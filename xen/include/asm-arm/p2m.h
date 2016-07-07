@@ -165,6 +165,13 @@ int guest_physmap_add_entry(struct domain *d,
                             unsigned long page_order,
                             p2m_type_t t);
 
+int guest_physmap_add_entry_range(struct domain *d,
+                                  unsigned long start_gfn,
+                                  unsigned long nr_mfns,
+                                  unsigned long mfn,
+                                  p2m_type_t t);
+
+
 /* Untyped version for RAM only, for compatibility */
 static inline int guest_physmap_add_page(struct domain *d,
                                          unsigned long gfn,

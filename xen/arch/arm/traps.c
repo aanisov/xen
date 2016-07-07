@@ -1665,10 +1665,6 @@ static void do_trap_smc(struct cpu_user_regs *regs, const union hsr hsr)
 #ifdef CONFIG_OPTEE
 	uint32_t smc_code = regs->r0;
 
-	/* Only dom0 can issue SMC call for now */
-	if (current->domain->domain_id != 0)
-		goto err;
-
 	/* Check if this call is to OPTEE */
 	if (OPTEE_SMC_OWNER_NUM(smc_code) >= OPTEE_SMC_OWNER_TRUSTED_APP &&
 	    OPTEE_SMC_OWNER_NUM(smc_code) <= OPTEE_SMC_OWNER_TRUSTED_OS_API) {

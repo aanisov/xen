@@ -36,6 +36,10 @@
 #include "vtimer.h"
 #include "vuart.h"
 
+#ifdef CONFIG_OPTEE
+#include "optee/optee.h"
+#endif
+
 DEFINE_PER_CPU(struct vcpu *, curr_vcpu);
 
 void idle_loop(void)
@@ -635,6 +639,9 @@ void arch_domain_destroy(struct domain *d)
     /* IOMMU page table is shared with P2M, always call
      * iommu_domain_destroy() before p2m_teardown().
      */
+#ifdef CONFIG_OPTEE
+    optee_domain_destroy(d);
+#endif
     iommu_domain_destroy(d);
     p2m_teardown(d);
     domain_vgic_free(d);

@@ -1302,6 +1302,19 @@ int guest_physmap_add_entry(struct domain *d,
                              d->arch.p2m.default_access);
 }
 
+int guest_physmap_add_entry_range(struct domain *d,
+                                  unsigned long start_gfn,
+                                  unsigned long nr_mfns,
+                                  unsigned long mfn,
+                                  p2m_type_t t)
+{
+    return apply_p2m_changes(d, INSERT,
+                             pfn_to_paddr(start_gfn),
+                             pfn_to_paddr(start_gfn + nr_mfns),
+                             pfn_to_paddr(mfn), MATTR_MEM, 0, t,
+                             d->arch.p2m.default_access);
+}
+
 void guest_physmap_remove_page(struct domain *d,
                                unsigned long gpfn,
                                unsigned long mfn, unsigned int page_order)

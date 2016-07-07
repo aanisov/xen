@@ -20,7 +20,12 @@
 #ifndef __ARCH_ARM_OPTEE_OPTEE_H__
 #define __ARCH_ARM_OPTEE_OPTEE_H__
 
+#ifndef OPTEE_MAX_DOMAINS
+#define OPTEE_MAX_DOMAINS 4
+#endif
+
 extern int optee_handle_smc(struct cpu_user_regs *regs);
+extern void optee_domain_destroy(struct domain *d);
 
 #endif
 
