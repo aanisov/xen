@@ -141,6 +141,12 @@ int optee_handle_smc(struct cpu_user_regs *regs)
 	case OPTEE_SMC_GET_SHM_CONFIG:
 		do_process_get_shm_config(regs);
 		break;
+	case OPTEE_SMC_ENABLE_SHM_CACHE:
+		/* We can't allow guests to enable SHM cache */
+		/* as OPTEE can cache other guest's SHM      */
+		/* So, we will pretend that cache is enabled */
+		regs->x0 = OPTEE_SMC_RETURN_OK;
+		break;
 	default:
 		/* Just forward request to OPTEE */
 		execute_smc(regs);
