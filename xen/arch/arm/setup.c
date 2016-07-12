@@ -401,9 +401,11 @@ static paddr_t __init get_xen_paddr(void)
         const struct membank *bank = &mi->bank[i];
         paddr_t s, e;
 
+#if 0
         /* We can only deal with contiguous memory at the moment */
         if ( last_end != bank->start )
             break;
+#endif
 
         last_end = bank->start + bank->size;
 
