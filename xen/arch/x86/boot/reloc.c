@@ -30,69 +30,81 @@ typedef unsigned int u32;
 #define ALIGN_UP(arg, align) \
                 (((arg) + (align) - 1) & ~((typeof(arg))(align) - 1))
 
+#define _p(val)		((void *)(unsigned long)(val))
+
 static u32 alloc;
 
-static void *reloc_mbi_struct(void *old, unsigned int bytes)
+static u32 alloc_mem(u32 bytes)
 {
-    void *new;
+    return alloc -= ALIGN_UP(bytes, 16);
+}
 
-    alloc -= ALIGN_UP(bytes, 16);
-    new = (void *)alloc;
+static u32 copy_mem(u32 src, u32 bytes)
+{
+    u32 dst, dst_ret;
+
+    dst = alloc_mem(bytes);
+    dst_ret = dst;
 
     while ( bytes-- )
-        *(char *)new++ = *(char *)old++;
+        *(char *)dst++ = *(char *)src++;
 
-    return (void *)alloc;
+    return dst_ret;
 }
 
-static char *reloc_mbi_string(char *old)
+static u32 copy_string(u32 src)
 {
-    char *p;
-    for ( p = old; *p != '\0'; p++ )
+    u32 p;
+
+    if ( !src )
+        return 0;
+
+    for ( p = src; *(char *)p != '\0'; p++ )
         continue;
-    return reloc_mbi_struct(old, p - old + 1);
+
+    return copy_mem(src, p - src + 1);
 }
 
-multiboot_info_t __stdcall *reloc(multiboot_info_t *mbi_old, u32 trampoline)
+multiboot_info_t __stdcall *reloc(u32 mbi_in, u32 trampoline)
 {
-    multiboot_info_t *mbi;
     int i;
+    multiboot_info_t *mbi_out;
 
     alloc = trampoline;
 
-    mbi = reloc_mbi_struct(mbi_old, sizeof(*mbi));
+    mbi_out = _p(copy_mem(mbi_in, sizeof(*mbi_out)));
 
-    if ( mbi->flags & MBI_CMDLINE )
-        mbi->cmdline = (u32)reloc_mbi_string((char *)mbi->cmdline);
+    if ( mbi_out->flags & MBI_CMDLINE )
+        mbi_out->cmdline = copy_string(mbi_out->cmdline);
 
-    if ( mbi->flags & MBI_MODULES )
+    if ( mbi_out->flags & MBI_MODULES )
     {
-        module_t *mods = reloc_mbi_struct(
-            (module_t *)mbi->mods_addr, mbi->mods_count * sizeof(module_t));
+        module_t *mods;
 
-        mbi->mods_addr = (u32)mods;
+        mbi_out->mods_addr = copy_mem(mbi_out->mods_addr,
+                                      mbi_out->mods_count * sizeof(module_t));
 
-        for ( i = 0; i < mbi->mods_count; i++ )
+        mods = _p(mbi_out->mods_addr);
+
+        for ( i = 0; i < mbi_out->mods_count; i++ )
         {
             if ( mods[i].string )
-                mods[i].string = (u32)reloc_mbi_string((char *)mods[i].string);
+                mods[i].string = copy_string(mods[i].string);
         }
     }
 
-    if ( mbi->flags & MBI_MEMMAP )
-        mbi->mmap_addr = (u32)reloc_mbi_struct(
-            (memory_map_t *)mbi->mmap_addr, mbi->mmap_length);
+    if ( mbi_out->flags & MBI_MEMMAP )
+        mbi_out->mmap_addr = copy_mem(mbi_out->mmap_addr, mbi_out->mmap_length);
 
-    if ( mbi->flags & MBI_LOADERNAME )
-        mbi->boot_loader_name = (u32)reloc_mbi_string(
-            (char *)mbi->boot_loader_name);
+    if ( mbi_out->flags & MBI_LOADERNAME )
+        mbi_out->boot_loader_name = copy_string(mbi_out->boot_loader_name);
 
     /* Mask features we don't understand or don't relocate. */
-    mbi->flags &= (MBI_MEMLIMITS |
-                   MBI_CMDLINE |
-                   MBI_MODULES |
-                   MBI_MEMMAP |
-                   MBI_LOADERNAME);
+    mbi_out->flags &= (MBI_MEMLIMITS |
+                       MBI_CMDLINE |
+                       MBI_MODULES |
+                       MBI_MEMMAP |
+                       MBI_LOADERNAME);
 
-    return mbi;
+    return mbi_out;
 }

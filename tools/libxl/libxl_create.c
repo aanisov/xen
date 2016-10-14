@@ -215,6 +215,8 @@ int libxl__domain_build_info_setdefault(libxl__gc *gc,
     if (!b_info->event_channels)
         b_info->event_channels = 1023;
 
+    libxl__arch_domain_build_info_acpi_setdefault(b_info);
+
     switch (b_info->type) {
     case LIBXL_DOMAIN_TYPE_HVM:
         if (b_info->shadow_memkb == LIBXL_MEMKB_DEFAULT)
@@ -454,7 +456,7 @@ int libxl__domain_build(libxl__gc *gc,
         localents = libxl__calloc(gc, 9, sizeof(char *));
         i = 0;
         localents[i++] = "platform/acpi";
-        localents[i++] = libxl_defbool_val(info->u.hvm.acpi) ? "1" : "0";
+        localents[i++] = libxl__acpi_defbool_val(info) ? "1" : "0";
         localents[i++] = "platform/acpi_s3";
         localents[i++] = libxl_defbool_val(info->u.hvm.acpi_s3) ? "1" : "0";
         localents[i++] = "platform/acpi_s4";
@@ -899,17 +901,6 @@ static void initiate_domain_create(libxl__egc *egc,
         goto error_out;
     }
 
-    ret = libxl__domain_make(gc, d_config, &domid, &state->config);
-    if (ret) {
-        LOG(ERROR, "cannot make domain: %d", ret);
-        dcs->guest_domid = domid;
-        ret = ERROR_FAIL;
-        goto error_out;
-    }
-
-    dcs->guest_domid = domid;
-    dcs->sdss.dm.guest_domid = 0; /* means we haven't spawned */
-
     ret = libxl__domain_build_info_setdefault(gc, &d_config->b_info);
     if (ret) {
         LOG(ERROR, "Unable to set domain build info defaults");
@@ -922,6 +913,17 @@ static void initiate_domain_create(libxl__egc *egc,
         LOG(ERROR, "nestedhvm and altp2mhvm cannot be used together");
         goto error_out;
     }
+
+    ret = libxl__domain_make(gc, d_config, &domid, &state->config);
+    if (ret) {
+        LOG(ERROR, "cannot make domain: %d", ret);
+        dcs->guest_domid = domid;
+        ret = ERROR_FAIL;
+        goto error_out;
+    }
+
+    dcs->guest_domid = domid;
+    dcs->sdss.dm.guest_domid = 0; /* means we haven't spawned */
 
     /*
      * Set the dm version quite early so that libxl doesn't have to pass the

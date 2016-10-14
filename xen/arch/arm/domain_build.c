@@ -42,6 +42,26 @@ static void __init parse_dom0_mem(const char *s)
 }
 custom_param("dom0_mem", parse_dom0_mem);
 
+struct map_range_data
+{
+    struct domain *d;
+    p2m_type_t p2mt;
+};
+
+static const struct dt_device_match dev_map_attrs[] __initconst =
+{
+    {
+        __DT_MATCH_COMPATIBLE("mmio-sram"),
+        __DT_MATCH_PROP("no-memory-wc"),
+        .data = (void *) (uintptr_t) p2m_mmio_direct_dev,
+    },
+    {
+        __DT_MATCH_COMPATIBLE("mmio-sram"),
+        .data = (void *) (uintptr_t) p2m_mmio_direct_nc,
+    },
+    { /* sentinel */ },
+};
+
 //#define DEBUG_11_ALLOCATION
 #ifdef DEBUG_11_ALLOCATION
 # define D11PRINT(fmt, args...) printk(XENLOG_DEBUG fmt, ##args)
@@ -974,7 +994,8 @@ static int map_range_to_domain(const struct dt_device_node *dev,
                                u64 addr, u64 len,
                                void *data)
 {
-    struct domain *d = data;
+    struct map_range_data *mr_data = data;
+    struct domain *d = mr_data->d;
     bool_t need_mapping = !dt_device_for_passthrough(dev);
     int res;
 
@@ -991,10 +1012,12 @@ static int map_range_to_domain(const struct dt_device_node *dev,
 
     if ( need_mapping )
     {
-        res = map_mmio_regions(d,
+        res = map_regions_p2mt(d,
                                _gfn(paddr_to_pfn(addr)),
                                DIV_ROUND_UP(len, PAGE_SIZE),
-                               _mfn(paddr_to_pfn(addr)));
+                               _mfn(paddr_to_pfn(addr)),
+                               mr_data->p2mt);
+
         if ( res < 0 )
         {
             printk(XENLOG_ERR "Unable to map 0x%"PRIx64
@@ -1005,7 +1028,8 @@ static int map_range_to_domain(const struct dt_device_node *dev,
         }
     }
 
-    dt_dprintk("  - MMIO: %010"PRIx64" - %010"PRIx64"\n", addr, addr + len);
+    dt_dprintk("  - MMIO: %010"PRIx64" - %010"PRIx64" P2MType=%x\n",
+               addr, addr + len, mr_data->p2mt);
 
     return 0;
 }
@@ -1016,8 +1040,10 @@ static int map_range_to_domain(const struct dt_device_node *dev,
  * the child resources available to domain 0.
  */
 static int map_device_children(struct domain *d,
-                               const struct dt_device_node *dev)
+                               const struct dt_device_node *dev,
+                               p2m_type_t p2mt)
 {
+    struct map_range_data mr_data = { .d = d, .p2mt = p2mt };
     int ret;
 
     if ( dt_device_type_is_equal(dev, "pci") )
@@ -1029,7 +1055,7 @@ static int map_device_children(struct domain *d,
         if ( ret < 0 )
             return ret;
 
-        ret = dt_for_each_range(dev, &map_range_to_domain, d);
+        ret = dt_for_each_range(dev, &map_range_to_domain, &mr_data);
         if ( ret < 0 )
             return ret;
     }
@@ -1045,7 +1071,8 @@ static int map_device_children(struct domain *d,
  *  - Assign the device to the guest if it's protected by an IOMMU
  *  - Map the IRQs and iomem regions to DOM0
  */
-static int handle_device(struct domain *d, struct dt_device_node *dev)
+static int handle_device(struct domain *d, struct dt_device_node *dev,
+                         p2m_type_t p2mt)
 {
     unsigned int nirq;
     unsigned int naddr;
@@ -1111,6 +1138,7 @@ static int handle_device(struct domain *d, struct dt_device_node *dev)
     /* Give permission and map MMIOs */
     for ( i = 0; i < naddr; i++ )
     {
+        struct map_range_data mr_data = { .d = d, .p2mt = p2mt };
         res = dt_device_get_address(dev, i, &addr, &size);
         if ( res )
         {
@@ -1119,20 +1147,36 @@ static int handle_device(struct domain *d, struct dt_device_node *dev)
             return res;
         }
 
-        res = map_range_to_domain(dev, addr, size, d);
+        res = map_range_to_domain(dev, addr, size, &mr_data);
         if ( res )
             return res;
     }
 
-    res = map_device_children(d, dev);
+    res = map_device_children(d, dev, p2mt);
     if ( res )
         return res;
 
     return 0;
 }
 
+static p2m_type_t lookup_map_attr(struct dt_device_node *node,
+                                  p2m_type_t parent_p2mt)
+{
+    const struct dt_device_match *r;
+
+    /* Search and if nothing matches, use the parent's attributes.  */
+    r = dt_match_node(dev_map_attrs, node);
+
+    /*
+     * If this node does not dictate specific mapping attributes,
+     * it inherits its parent's attributes.
+     */
+    return r ? (uintptr_t) r->data : parent_p2mt;
+}
+
 static int handle_node(struct domain *d, struct kernel_info *kinfo,
-                       struct dt_device_node *node)
+                       struct dt_device_node *node,
+                       p2m_type_t p2mt)
 {
     static const struct dt_device_match skip_matches[] __initconst =
     {
@@ -1219,7 +1263,8 @@ static int handle_node(struct domain *d, struct kernel_info *kinfo,
                "WARNING: Path %s is reserved, skip the node as we may re-use the path.\n",
                path);
 
-    res = handle_device(d, node);
+    p2mt = lookup_map_attr(node, p2mt);
+    res = handle_device(d, node, p2mt);
     if ( res)
         return res;
 
@@ -1241,7 +1286,7 @@ static int handle_node(struct domain *d, struct kernel_info *kinfo,
 
     for ( child = node->child; child != NULL; child = child->sibling )
     {
-        res = handle_node(d, kinfo, child);
+        res = handle_node(d, kinfo, child, p2mt);
         if ( res )
             return res;
     }
@@ -1273,6 +1318,7 @@ static int handle_node(struct domain *d, struct kernel_info *kinfo,
 
 static int prepare_dtb(struct domain *d, struct kernel_info *kinfo)
 {
+    const p2m_type_t default_p2mt = p2m_mmio_direct_dev;
     const void *fdt;
     int new_size;
     int ret;
@@ -1292,7 +1338,7 @@ static int prepare_dtb(struct domain *d, struct kernel_info *kinfo)
 
     fdt_finish_reservemap(kinfo->fdt);
 
-    ret = handle_node(d, kinfo, dt_host);
+    ret = handle_node(d, kinfo, dt_host, default_p2mt);
     if ( ret )
         goto err;
 
@@ -1518,10 +1564,11 @@ static void acpi_map_other_tables(struct domain *d)
     {
         addr = acpi_gbl_root_table_list.tables[i].address;
         size = acpi_gbl_root_table_list.tables[i].length;
-        res = map_regions_rw_cache(d,
-                                   _gfn(paddr_to_pfn(addr)),
-                                   DIV_ROUND_UP(size, PAGE_SIZE),
-                                   _mfn(paddr_to_pfn(addr)));
+        res = map_regions_p2mt(d,
+                               _gfn(paddr_to_pfn(addr)),
+                               DIV_ROUND_UP(size, PAGE_SIZE),
+                               _mfn(paddr_to_pfn(addr)),
+                               p2m_mmio_direct_c);
         if ( res )
         {
              panic(XENLOG_ERR "Unable to map ACPI region 0x%"PRIx64
@@ -1874,10 +1921,11 @@ static int prepare_acpi(struct domain *d, struct kernel_info *kinfo)
     acpi_create_efi_mmap_table(d, &kinfo->mem, tbl_add);
 
     /* Map the EFI and ACPI tables to Dom0 */
-    rc = map_regions_rw_cache(d,
-                              _gfn(paddr_to_pfn(d->arch.efi_acpi_gpa)),
-                              PFN_UP(d->arch.efi_acpi_len),
-                              _mfn(paddr_to_pfn(virt_to_maddr(d->arch.efi_acpi_table))));
+    rc = map_regions_p2mt(d,
+                          _gfn(paddr_to_pfn(d->arch.efi_acpi_gpa)),
+                          PFN_UP(d->arch.efi_acpi_len),
+                          _mfn(paddr_to_pfn(virt_to_maddr(d->arch.efi_acpi_table))),
+                          p2m_mmio_direct_c);
     if ( rc != 0 )
     {
         printk(XENLOG_ERR "Unable to map EFI/ACPI table 0x%"PRIx64
@@ -2016,9 +2064,12 @@ static void evtchn_fixup(struct domain *d, struct kernel_info *kinfo)
            d->arch.evtchn_irq);
 
     /* Set the value of domain param HVM_PARAM_CALLBACK_IRQ */
-    val = (u64)HVM_PARAM_CALLBACK_TYPE_PPI << 56;
-    val |= (2 << 8); /* Active-low level-sensitive  */
-    val |= d->arch.evtchn_irq & 0xff;
+    val = MASK_INSR(HVM_PARAM_CALLBACK_TYPE_PPI,
+                    HVM_PARAM_CALLBACK_IRQ_TYPE_MASK);
+    /* Active-low level-sensitive  */
+    val |= MASK_INSR(HVM_PARAM_CALLBACK_TYPE_PPI_FLAG_LOW_LEVEL,
+                     HVM_PARAM_CALLBACK_TYPE_PPI_FLAG_MASK);
+    val |= d->arch.evtchn_irq;
     d->arch.hvm_domain.params[HVM_PARAM_CALLBACK_IRQ] = val;
 
     /*

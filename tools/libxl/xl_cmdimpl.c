@@ -1550,6 +1550,7 @@ static void parse_config_data(const char *config_source,
     b_info->cmdline = parse_cmdline(config);
 
     xlu_cfg_get_defbool(config, "driver_domain", &c_info->driver_domain, 0);
+    xlu_cfg_get_defbool(config, "acpi", &b_info->acpi, 0);
 
     switch(b_info->type) {
     case LIBXL_DOMAIN_TYPE_HVM:
@@ -1579,7 +1580,6 @@ static void parse_config_data(const char *config_source,
 
         xlu_cfg_get_defbool(config, "pae", &b_info->u.hvm.pae, 0);
         xlu_cfg_get_defbool(config, "apic", &b_info->u.hvm.apic, 0);
-        xlu_cfg_get_defbool(config, "acpi", &b_info->u.hvm.acpi, 0);
         xlu_cfg_get_defbool(config, "acpi_s3", &b_info->u.hvm.acpi_s3, 0);
         xlu_cfg_get_defbool(config, "acpi_s4", &b_info->u.hvm.acpi_s4, 0);
         xlu_cfg_get_defbool(config, "nx", &b_info->u.hvm.nx, 0);
@@ -3728,14 +3728,14 @@ int main_usblist(int argc, char **argv)
     }
 
     for (i = 0; i < numctrl; ++i) {
-        printf("%-6s %-6s %-3s %-5s %-7s %-5s\n",
+        printf("%-6s %-12s %-3s %-5s %-7s %-5s\n",
                 "Devid", "Type", "BE", "state", "usb-ver", "ports");
 
         libxl_usbctrlinfo_init(&usbctrlinfo);
 
         if (!libxl_device_usbctrl_getinfo(ctx, domid,
                                 &usbctrls[i], &usbctrlinfo)) {
-            printf("%-6d %-6s %-3d %-5d %-7d %-5d\n",
+            printf("%-6d %-12s %-3d %-5d %-7d %-5d\n",
                     usbctrlinfo.devid,
                     libxl_usbctrl_type_to_string(usbctrlinfo.type),
                     usbctrlinfo.backend_id, usbctrlinfo.state,
@@ -6457,8 +6457,29 @@ static int sched_credit_pool_output(uint32_t poolid)
     return 0;
 }
 
-static int sched_credit2_domain_output(
-    int domid)
+static int sched_credit2_params_set(int poolid,
+                                    libxl_sched_credit2_params *scinfo)
+{
+    if (libxl_sched_credit2_params_set(ctx, poolid, scinfo)) {
+        fprintf(stderr, "libxl_sched_credit2_params_set failed.\n");
+        return 1;
+    }
+
+    return 0;
+}
+
+static int sched_credit2_params_get(int poolid,
+                                    libxl_sched_credit2_params *scinfo)
+{
+    if (libxl_sched_credit2_params_get(ctx, poolid, scinfo)) {
+        fprintf(stderr, "libxl_sched_credit2_params_get failed.\n");
+        return 1;
+    }
+
+    return 0;
+}
+
+static int sched_credit2_domain_output(int domid)
 {
     char *domname;
     libxl_domain_sched_params scinfo;
@@ -6480,6 +6501,22 @@ static int sched_credit2_domain_output(
         scinfo.weight);
     free(domname);
     libxl_domain_sched_params_dispose(&scinfo);
+    return 0;
+}
+
+static int sched_credit2_pool_output(uint32_t poolid)
+{
+    libxl_sched_credit2_params scparam;
+    char *poolname = libxl_cpupoolid_to_name(ctx, poolid);
+
+    if (sched_credit2_params_get(poolid, &scparam))
+        printf("Cpupool %s: [sched params unavailable]\n", poolname);
+    else
+        printf("Cpupool %s: ratelimit=%dus\n",
+               poolname, scparam.ratelimit_us);
+
+    free(poolname);
+
     return 0;
 }
 
@@ -6578,17 +6615,6 @@ static int sched_rtds_pool_output(uint32_t poolid)
     poolname = libxl_cpupoolid_to_name(ctx, poolid);
     printf("Cpupool %s: sched=RTDS\n", poolname);
 
-    free(poolname);
-    return 0;
-}
-
-static int sched_default_pool_output(uint32_t poolid)
-{
-    char *poolname;
-
-    poolname = libxl_cpupoolid_to_name(ctx, poolid);
-    printf("Cpupool %s:\n",
-           poolname);
     free(poolname);
     return 0;
 }
@@ -6838,23 +6864,35 @@ int main_sched_credit2(int argc, char **argv)
 {
     const char *dom = NULL;
     const char *cpupool = NULL;
+    int ratelimit = 0;
     int weight = 256;
+    bool opt_s = false;
+    bool opt_r = false;
     bool opt_w = false;
     int opt, rc;
     static struct option opts[] = {
         {"domain", 1, 0, 'd'},
         {"weight", 1, 0, 'w'},
+        {"schedparam", 0, 0, 's'},
+        {"ratelimit_us", 1, 0, 'r'},
         {"cpupool", 1, 0, 'p'},
         COMMON_LONG_OPTS
     };
 
-    SWITCH_FOREACH_OPT(opt, "d:w:p:", opts, "sched-credit2", 0) {
+    SWITCH_FOREACH_OPT(opt, "d:w:p:r:s", opts, "sched-credit2", 0) {
     case 'd':
         dom = optarg;
         break;
     case 'w':
         weight = strtol(optarg, NULL, 10);
         opt_w = true;
+        break;
+    case 's':
+        opt_s = true;
+        break;
+    case 'r':
+        ratelimit = strtol(optarg, NULL, 10);
+        opt_r = true;
         break;
     case 'p':
         cpupool = optarg;
@@ -6871,10 +6909,31 @@ int main_sched_credit2(int argc, char **argv)
         return EXIT_FAILURE;
     }
 
-    if (!dom) { /* list all domain's credit scheduler info */
+    if (opt_s) {
+        libxl_sched_credit2_params scparam;
+        uint32_t poolid = 0;
+
+        if (cpupool) {
+            if (libxl_cpupool_qualifier_to_cpupoolid(ctx, cpupool,
+                                                     &poolid, NULL) ||
+                !libxl_cpupoolid_is_valid(ctx, poolid)) {
+                fprintf(stderr, "unknown cpupool \'%s\'\n", cpupool);
+                return EXIT_FAILURE;
+            }
+        }
+
+        if (!opt_r) { /* Output scheduling parameters */
+            if (sched_credit2_pool_output(poolid))
+                return EXIT_FAILURE;
+        } else {      /* Set scheduling parameters (so far, just ratelimit) */
+            scparam.ratelimit_us = ratelimit;
+            if (sched_credit2_params_set(poolid, &scparam))
+                return EXIT_FAILURE;
+        }
+    } else if (!dom) { /* list all domain's credit scheduler info */
         if (sched_domain_output(LIBXL_SCHEDULER_CREDIT2,
                                 sched_credit2_domain_output,
-                                sched_default_pool_output,
+                                sched_credit2_pool_output,
                                 cpupool))
             return EXIT_FAILURE;
     } else {
@@ -9535,6 +9594,35 @@ int main_psr_hwinfo(int argc, char **argv)
 }
 
 #endif
+
+int main_qemu_monitor_command(int argc, char **argv)
+{
+    int opt;
+    uint32_t domid;
+    char *cmd;
+    char *output;
+    int ret;
+
+    SWITCH_FOREACH_OPT(opt, "", NULL, "qemu-monitor-command", 2) {
+        /* No options */
+    }
+
+    domid = find_domain(argv[optind]);
+    cmd = argv[optind + 1];
+
+    if (argc - optind > 2) {
+        fprintf(stderr, "Invalid arguments.\n");
+        return EXIT_FAILURE;
+    }
+
+    ret = libxl_qemu_monitor_command(ctx, domid, cmd, &output);
+    if (!ret && output) {
+        printf("%s\n", output);
+        free(output);
+    }
+
+    return ret ? EXIT_FAILURE : EXIT_SUCCESS;
+}
 
 /*
  * Local variables:

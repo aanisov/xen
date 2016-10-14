@@ -910,25 +910,31 @@ int xc_sched_credit_domain_get(xc_interface *xch,
                                uint32_t domid,
                                struct xen_domctl_sched_credit *sdom);
 int xc_sched_credit_params_set(xc_interface *xch,
-                              uint32_t cpupool_id,
-                              struct xen_sysctl_credit_schedule *schedule);
+                               uint32_t cpupool_id,
+                               struct xen_sysctl_credit_schedule *schedule);
 int xc_sched_credit_params_get(xc_interface *xch,
-                              uint32_t cpupool_id,
-                              struct xen_sysctl_credit_schedule *schedule);
-int xc_sched_credit2_domain_set(xc_interface *xch,
-                               uint32_t domid,
-                               struct xen_domctl_sched_credit2 *sdom);
+                               uint32_t cpupool_id,
+                               struct xen_sysctl_credit_schedule *schedule);
 
+int xc_sched_credit2_params_set(xc_interface *xch,
+                                uint32_t cpupool_id,
+                                struct xen_sysctl_credit2_schedule *schedule);
+int xc_sched_credit2_params_get(xc_interface *xch,
+                                uint32_t cpupool_id,
+                                struct xen_sysctl_credit2_schedule *schedule);
+int xc_sched_credit2_domain_set(xc_interface *xch,
+                                uint32_t domid,
+                                struct xen_domctl_sched_credit2 *sdom);
 int xc_sched_credit2_domain_get(xc_interface *xch,
-                               uint32_t domid,
-                               struct xen_domctl_sched_credit2 *sdom);
+                                uint32_t domid,
+                                struct xen_domctl_sched_credit2 *sdom);
 
 int xc_sched_rtds_domain_set(xc_interface *xch,
-                            uint32_t domid,
-                            struct xen_domctl_sched_rtds *sdom);
+                             uint32_t domid,
+                             struct xen_domctl_sched_rtds *sdom);
 int xc_sched_rtds_domain_get(xc_interface *xch,
-                            uint32_t domid,
-                            struct xen_domctl_sched_rtds *sdom);
+                             uint32_t domid,
+                             struct xen_domctl_sched_rtds *sdom);
 int xc_sched_rtds_vcpu_set(xc_interface *xch,
                            uint32_t domid,
                            struct xen_domctl_schedparam_vcpu *vcpus,
@@ -2061,11 +2067,11 @@ int xc_disable_turbo(xc_interface *xch, int cpuid);
  */
 
 int xc_tmem_control_oid(xc_interface *xch, int32_t pool_id, uint32_t subop,
-                        uint32_t cli_id, uint32_t arg1, uint32_t arg2,
+                        uint32_t cli_id, uint32_t len, uint32_t arg,
                         struct xen_tmem_oid oid, void *buf);
 int xc_tmem_control(xc_interface *xch,
                     int32_t pool_id, uint32_t subop, uint32_t cli_id,
-                    uint32_t arg1, uint32_t arg2, void *buf);
+                    uint32_t len, uint32_t arg, void *buf);
 int xc_tmem_auth(xc_interface *xch, int cli_id, char *uuid_str, int arg1);
 int xc_tmem_save(xc_interface *xch, int dom, int live, int fd, int field_marker);
 int xc_tmem_save_extra(xc_interface *xch, int dom, int fd, int field_marker);
@@ -2126,6 +2132,15 @@ int xc_set_mem_access(xc_interface *xch, domid_t domain_id,
                       uint32_t nr);
 
 /*
+ * Set an array of pages to their respective access in the access array.
+ * The nr parameter specifies the size of the pages and access arrays.
+ * The same allowed access types as for xc_set_mem_access() apply.
+ */
+int xc_set_mem_access_multi(xc_interface *xch, domid_t domain_id,
+                            uint8_t *access, uint64_t *pages,
+                            uint32_t nr);
+
+/*
  * Gets the mem access for the given page (returned in access on success)
  */
 int xc_get_mem_access(xc_interface *xch, domid_t domain_id,
@@ -2168,6 +2183,8 @@ int xc_monitor_guest_request(xc_interface *xch, domid_t domain_id,
 int xc_monitor_debug_exceptions(xc_interface *xch, domid_t domain_id,
                                 bool enable, bool sync);
 int xc_monitor_cpuid(xc_interface *xch, domid_t domain_id, bool enable);
+int xc_monitor_privileged_call(xc_interface *xch, domid_t domain_id,
+                               bool enable);
 /**
  * This function enables / disables emulation for each REP for a
  * REP-compatible instruction.

@@ -51,6 +51,8 @@
 /* Default timeslice: 30ms */
 #define CSCHED_DEFAULT_TSLICE_MS    30
 #define CSCHED_CREDITS_PER_MSEC     10
+/* Never set a timer shorter than this value. */
+#define CSCHED_MIN_TIMER            XEN_SYSCTL_SCHED_RATELIMIT_MIN
 
 
 /*
@@ -131,6 +133,8 @@
 #define TRC_CSCHED_TICKLE        TRC_SCHED_CLASS_EVT(CSCHED, 6)
 #define TRC_CSCHED_BOOST_START   TRC_SCHED_CLASS_EVT(CSCHED, 7)
 #define TRC_CSCHED_BOOST_END     TRC_SCHED_CLASS_EVT(CSCHED, 8)
+#define TRC_CSCHED_SCHEDULE      TRC_SCHED_CLASS_EVT(CSCHED, 9)
+#define TRC_CSCHED_RATELIMIT     TRC_SCHED_CLASS_EVT(CSCHED, 10)
 
 
 /*
@@ -433,9 +437,9 @@ static inline void __runq_tickle(struct csched_vcpu *new)
             /*
              * If there are no suitable idlers for new, and it's higher
              * priority than cur, check whether we can migrate cur away.
-             * (We have to do it indirectly, via _VPF_migrating, instead
+             * We have to do it indirectly, via _VPF_migrating (instead
              * of just tickling any idler suitable for cur) because cur
-             * is running.)
+             * is running.
              *
              * If there are suitable idlers for new, no matter priorities,
              * leave cur alone (as it is running and is, likely, cache-hot)
@@ -444,9 +448,7 @@ static inline void __runq_tickle(struct csched_vcpu *new)
              */
             if ( new_idlers_empty && new->pri > cur->pri )
             {
-                csched_balance_cpumask(cur->vcpu, balance_step,
-                                       cpumask_scratch_cpu(cpu));
-                if ( cpumask_intersects(cpumask_scratch_cpu(cpu),
+                if ( cpumask_intersects(cur->vcpu->cpu_hard_affinity,
                                         &idle_mask) )
                 {
                     SCHED_VCPU_STAT_CRANK(cur, kicked_away);
@@ -465,11 +467,12 @@ static inline void __runq_tickle(struct csched_vcpu *new)
                 if ( opt_tickle_one_idle )
                 {
                     this_cpu(last_tickle_cpu) =
-                        cpumask_cycle(this_cpu(last_tickle_cpu), &idle_mask);
+                        cpumask_cycle(this_cpu(last_tickle_cpu),
+                                      cpumask_scratch_cpu(cpu));
                     __cpumask_set_cpu(this_cpu(last_tickle_cpu), &mask);
                 }
                 else
-                    cpumask_or(&mask, &mask, &idle_mask);
+                    cpumask_or(&mask, &mask, cpumask_scratch_cpu(cpu));
             }
 
             /* Did we find anyone? */
@@ -1227,16 +1230,20 @@ csched_sys_cntl(const struct scheduler *ops,
     switch ( sc->cmd )
     {
     case XEN_SYSCTL_SCHEDOP_putinfo:
-        if (params->tslice_ms > XEN_SYSCTL_CSCHED_TSLICE_MAX
-            || params->tslice_ms < XEN_SYSCTL_CSCHED_TSLICE_MIN 
-            || (params->ratelimit_us
-                && (params->ratelimit_us > XEN_SYSCTL_SCHED_RATELIMIT_MAX
-                    || params->ratelimit_us < XEN_SYSCTL_SCHED_RATELIMIT_MIN))
-            || MICROSECS(params->ratelimit_us) > MILLISECS(params->tslice_ms) )
+        if ( params->tslice_ms > XEN_SYSCTL_CSCHED_TSLICE_MAX
+             || params->tslice_ms < XEN_SYSCTL_CSCHED_TSLICE_MIN
+             || (params->ratelimit_us
+                 && (params->ratelimit_us > XEN_SYSCTL_SCHED_RATELIMIT_MAX
+                     || params->ratelimit_us < XEN_SYSCTL_SCHED_RATELIMIT_MIN))
+             || MICROSECS(params->ratelimit_us) > MILLISECS(params->tslice_ms) )
                 goto out;
 
         spin_lock_irqsave(&prv->lock, flags);
         __csched_set_tslice(prv, params->tslice_ms);
+        if ( !prv->ratelimit_us && params->ratelimit_us )
+            printk(XENLOG_INFO "Enabling context switch rate limiting\n");
+        else if ( prv->ratelimit_us && !params->ratelimit_us )
+            printk(XENLOG_INFO "Disabling context switch rate limiting\n");
         prv->ratelimit_us = params->ratelimit_us;
         spin_unlock_irqrestore(&prv->lock, flags);
 
@@ -1769,6 +1776,23 @@ csched_schedule(
     SCHED_STAT_CRANK(schedule);
     CSCHED_VCPU_CHECK(current);
 
+    /*
+     * Here in Credit1 code, we usually just call TRACE_nD() helpers, and
+     * don't care about packing. But scheduling happens very often, so it
+     * actually is important that the record is as small as possible.
+     */
+    if ( unlikely(tb_init_done) )
+    {
+        struct {
+            unsigned cpu:16, tasklet:8, idle:8;
+        } d;
+        d.cpu = cpu;
+        d.tasklet = tasklet_work_scheduled;
+        d.idle = is_idle_vcpu(current);
+        __trace_var(TRC_CSCHED_SCHEDULE, 1, sizeof(d),
+                    (unsigned char *)&d);
+    }
+
     runtime = now - current->runstate.state_entry_time;
     if ( runtime < 0 ) /* Does this ever happen? */
         runtime = 0;
@@ -1797,9 +1821,16 @@ csched_schedule(
      *   cpu and steal it.
      */
 
-    /* If we have schedule rate limiting enabled, check to see
-     * how long we've run for. */
-    if ( !tasklet_work_scheduled
+    /*
+     * If we have schedule rate limiting enabled, check to see
+     * how long we've run for.
+     *
+     * If scurr is yielding, however, we don't let rate limiting kick in.
+     * In fact, it may be the case that scurr is about to spin, and there's
+     * no point forcing it to do so until rate limiting expires.
+     */
+    if ( !test_bit(CSCHED_FLAG_VCPU_YIELD, &scurr->flags)
+         && !tasklet_work_scheduled
          && prv->ratelimit_us
          && vcpu_runnable(current)
          && !is_idle_vcpu(current)
@@ -1808,7 +1839,28 @@ csched_schedule(
         snext = scurr;
         snext->start_time += now;
         perfc_incr(delay_ms);
-        tslice = MICROSECS(prv->ratelimit_us);
+        /*
+         * Next timeslice must last just until we'll have executed for
+         * ratelimit_us. However, to avoid setting a really short timer, which
+         * will most likely be inaccurate and counterproductive, we never go
+         * below CSCHED_MIN_TIMER.
+         */
+        tslice = MICROSECS(prv->ratelimit_us) - runtime;
+        if ( unlikely(runtime < CSCHED_MIN_TIMER) )
+            tslice = CSCHED_MIN_TIMER;
+        if ( unlikely(tb_init_done) )
+        {
+            struct {
+                unsigned vcpu:16, dom:16;
+                unsigned runtime;
+            } d;
+            d.dom = scurr->vcpu->domain->domain_id;
+            d.vcpu = scurr->vcpu->vcpu_id;
+            d.runtime = runtime;
+            __trace_var(TRC_CSCHED_RATELIMIT, 1, sizeof(d),
+                        (unsigned char *)&d);
+        }
+
         ret.migrated = 0;
         goto out;
     }

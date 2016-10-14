@@ -48,6 +48,20 @@ struct p2m_domain {
      * decrease. */
     gfn_t lowest_mapped_gfn;
 
+    /* Indicate if it is required to clean the cache when writing an entry */
+    bool clean_pte;
+
+    /*
+     * P2M updates may required TLBs to be flushed (invalidated).
+     *
+     * Flushes may be deferred by setting 'need_flush' and then flushing
+     * when the p2m write lock is released.
+     *
+     * If an immediate flush is required (e.g, if a super page is
+     * shattered), call p2m_tlb_flush_sync().
+     */
+    bool need_flush;
+
     /* Gather some statistics for information purposes only */
     struct {
         /* Number of mappings at each p2m tree level */
@@ -78,6 +92,9 @@ struct p2m_domain {
      * enough available bits to store this information.
      */
     struct radix_tree_root mem_access_settings;
+
+    /* back pointer to domain */
+    struct domain *domain;
 };
 
 /*
@@ -91,6 +108,7 @@ typedef enum {
     p2m_invalid = 0,    /* Nothing mapped here */
     p2m_ram_rw,         /* Normal read/write guest RAM */
     p2m_ram_ro,         /* Read-only; writes are silently dropped */
+    p2m_mmio_direct_dev,/* Read/write mapping of genuine Device MMIO area */
     p2m_mmio_direct_nc, /* Read/write mapping of genuine MMIO area non-cacheable */
     p2m_mmio_direct_c,  /* Read/write mapping of genuine MMIO area cacheable */
     p2m_map_foreign,    /* Ram pages from foreign domain */
@@ -121,10 +139,11 @@ typedef enum {
                              p2m_to_mask(p2m_map_foreign)))
 
 static inline
-void p2m_mem_access_emulate_check(struct vcpu *v,
+bool p2m_mem_access_emulate_check(struct vcpu *v,
                                   const vm_event_response_t *rsp)
 {
     /* Not supported on ARM. */
+    return 0;
 }
 
 static inline
@@ -159,21 +178,72 @@ void p2m_restore_state(struct vcpu *n);
 /* Print debugging/statistial info about a domain's p2m */
 void p2m_dump_info(struct domain *d);
 
+static inline void p2m_write_lock(struct p2m_domain *p2m)
+{
+    write_lock(&p2m->lock);
+}
+
+void p2m_write_unlock(struct p2m_domain *p2m);
+
+static inline void p2m_read_lock(struct p2m_domain *p2m)
+{
+    read_lock(&p2m->lock);
+}
+
+static inline void p2m_read_unlock(struct p2m_domain *p2m)
+{
+    read_unlock(&p2m->lock);
+}
+
+static inline int p2m_is_locked(struct p2m_domain *p2m)
+{
+    return rw_is_locked(&p2m->lock);
+}
+
+static inline int p2m_is_write_locked(struct p2m_domain *p2m)
+{
+    return rw_is_write_locked(&p2m->lock);
+}
+
 /* Look up the MFN corresponding to a domain's GFN. */
 mfn_t p2m_lookup(struct domain *d, gfn_t gfn, p2m_type_t *t);
+
+/*
+ * Get details of a given gfn.
+ * The P2M lock should be taken by the caller.
+ */
+mfn_t p2m_get_entry(struct p2m_domain *p2m, gfn_t gfn,
+                    p2m_type_t *t, p2m_access_t *a,
+                    unsigned int *page_order);
+
+/*
+ * Direct set a p2m entry: only for use by the P2M code.
+ * The P2M write lock should be taken.
+ */
+int p2m_set_entry(struct p2m_domain *p2m,
+                  gfn_t sgfn,
+                  unsigned long nr,
+                  mfn_t smfn,
+                  p2m_type_t t,
+                  p2m_access_t a);
 
 /* Clean & invalidate caches corresponding to a region of guest address space */
 int p2m_cache_flush(struct domain *d, gfn_t start, unsigned long nr);
 
-int map_regions_rw_cache(struct domain *d,
-                         gfn_t gfn,
-                         unsigned long nr,
-                         mfn_t mfn);
+/*
+ * Map a region in the guest p2m with a specific p2m type.
+ * The memory attributes will be derived from the p2m type.
+ */
+int map_regions_p2mt(struct domain *d,
+                     gfn_t gfn,
+                     unsigned long nr,
+                     mfn_t mfn,
+                     p2m_type_t p2mt);
 
-int unmap_regions_rw_cache(struct domain *d,
-                           gfn_t gfn,
-                           unsigned long nr,
-                           mfn_t mfn);
+int unmap_regions_p2mt(struct domain *d,
+                       gfn_t gfn,
+                       unsigned long nr,
+                       mfn_t mfn);
 
 int map_dev_mmio_region(struct domain *d,
                         gfn_t gfn,

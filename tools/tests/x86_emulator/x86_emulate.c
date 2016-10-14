@@ -10,9 +10,15 @@ typedef bool bool_t;
 
 #define is_canonical_address(x) (((int64_t)(x) >> 47) == ((int64_t)(x) >> 63))
 
+#define EFER_SCE       (1 << 0)
+#define EFER_LMA       (1 << 10)
+
 #define BUG() abort()
 #define ASSERT assert
 #define ASSERT_UNREACHABLE() assert(!__LINE__)
+
+#define MASK_EXTR(v, m) (((v) & (m)) / ((m) & -(m)))
+#define MASK_INSR(v, m) (((v) * ((m) & -(m))) & (m))
 
 #define cpu_has_amd_erratum(nr) 0
 #define mark_regs_dirty(r) ((void)(r))

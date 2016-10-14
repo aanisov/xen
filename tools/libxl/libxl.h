@@ -275,6 +275,19 @@
 #define LIBXL_HAVE_BUILD_ID 1
 
 /*
+ * LIBXL_HAVE_QEMU_MONITOR_COMMAND indiactes the availability of the
+ * libxl_qemu_monitor_command() function.
+ */
+#define LIBXL_HAVE_QEMU_MONITOR_COMMAND 1
+
+/*
+ * LIBXL_HAVE_SCHED_CREDIT2_PARAMS indicates the existance of a
+ * libxl_sched_credit2_params structure, containing Credit2 scheduler
+ * wide parameters (i.e., the ratelimiting value).
+ */
+#define LIBXL_HAVE_SCHED_CREDIT2_PARAMS 1
+
+/*
  * libxl ABI compatibility
  *
  * The only guarantee which libxl makes regarding ABI compatibility
@@ -1339,7 +1352,8 @@ void libxl_domain_config_dispose(libxl_domain_config *d_config);
  * works with DomU.
  */
 int libxl_retrieve_domain_configuration(libxl_ctx *ctx, uint32_t domid,
-                                        libxl_domain_config *d_config);
+                                        libxl_domain_config *d_config)
+                                        LIBXL_EXTERNAL_CALLERS_ONLY;
 
 int libxl_domain_suspend(libxl_ctx *ctx, uint32_t domid, int fd,
                          int flags, /* LIBXL_SUSPEND_* */
@@ -1932,12 +1946,14 @@ void libxl_cpuid_set(libxl_ctx *ctx, uint32_t domid,
  */
 int libxl_userdata_store(libxl_ctx *ctx, uint32_t domid,
                               const char *userdata_userid,
-                              const uint8_t *data, int datalen);
+                              const uint8_t *data, int datalen)
+                              LIBXL_EXTERNAL_CALLERS_ONLY;
   /* If datalen==0, data is not used and the user data for
    * that domain and userdata_userid is deleted. */
 int libxl_userdata_retrieve(libxl_ctx *ctx, uint32_t domid,
                                  const char *userdata_userid,
-                                 uint8_t **data_r, int *datalen_r);
+                                 uint8_t **data_r, int *datalen_r)
+                                 LIBXL_EXTERNAL_CALLERS_ONLY;
   /* On successful return, *data_r is from malloc.
    * If there is no data for that domain and userdata_userid,
    * *data_r and *datalen_r will be set to 0.
@@ -1986,6 +2002,10 @@ int libxl_sched_credit_params_get(libxl_ctx *ctx, uint32_t poolid,
                                   libxl_sched_credit_params *scinfo);
 int libxl_sched_credit_params_set(libxl_ctx *ctx, uint32_t poolid,
                                   libxl_sched_credit_params *scinfo);
+int libxl_sched_credit2_params_get(libxl_ctx *ctx, uint32_t poolid,
+                                   libxl_sched_credit2_params *scinfo);
+int libxl_sched_credit2_params_set(libxl_ctx *ctx, uint32_t poolid,
+                                   libxl_sched_credit2_params *scinfo);
 
 /* Scheduler Per-domain parameters */
 
@@ -2151,6 +2171,14 @@ void libxl_psr_cat_info_list_free(libxl_psr_cat_info *list, int nr);
  * return ERROR_FAIL, but also leave errno valid. */
 int libxl_fd_set_cloexec(libxl_ctx *ctx, int fd, int cloexec);
 int libxl_fd_set_nonblock(libxl_ctx *ctx, int fd, int nonblock);
+
+/*
+ * Issue a qmp monitor command to the device model of the specified domain.
+ * The function returns the output of the command in a new allocated buffer
+ * via output.
+ */
+int libxl_qemu_monitor_command(libxl_ctx *ctx, uint32_t domid,
+                               const char *command_line, char **output);
 
 #include <libxl_event.h>
 

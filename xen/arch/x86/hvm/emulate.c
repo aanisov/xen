@@ -76,9 +76,9 @@ static int set_context_data(void *buffer, unsigned int size)
     if ( curr->arch.vm_event )
     {
         unsigned int safe_size =
-            min(size, curr->arch.vm_event->emul_read_data.size);
+            min(size, curr->arch.vm_event->emul.read.size);
 
-        memcpy(buffer, curr->arch.vm_event->emul_read_data.data, safe_size);
+        memcpy(buffer, curr->arch.vm_event->emul.read.data, safe_size);
         memset(buffer + safe_size, 0, size - safe_size);
         return X86EMUL_OKAY;
     }
@@ -835,7 +835,7 @@ static int hvmemul_read(
         container_of(ctxt, struct hvm_emulate_ctxt, ctxt));
 }
 
-static int hvmemul_insn_fetch(
+int hvmemul_insn_fetch(
     enum x86_segment seg,
     unsigned long offset,
     void *p_data,
@@ -1026,17 +1026,6 @@ static int hvmemul_cmpxchg(
     unsigned int bytes,
     struct x86_emulate_ctxt *ctxt)
 {
-    struct hvm_emulate_ctxt *hvmemul_ctxt =
-        container_of(ctxt, struct hvm_emulate_ctxt, ctxt);
-
-    if ( unlikely(hvmemul_ctxt->set_context) )
-    {
-        int rc = set_context_data(p_new, bytes);
-
-        if ( rc != X86EMUL_OKAY )
-            return rc;
-    }
-
     /* Fix this in case the guest is really relying on r-m-w atomicity. */
     return hvmemul_write(seg, offset, p_new, bytes, ctxt);
 }
@@ -1628,21 +1617,12 @@ static int hvmemul_get_fpu(
     switch ( type )
     {
     case X86EMUL_FPU_fpu:
-        break;
+    case X86EMUL_FPU_wait:
     case X86EMUL_FPU_mmx:
-        if ( !cpu_has_mmx )
-            return X86EMUL_UNHANDLEABLE;
-        break;
     case X86EMUL_FPU_xmm:
-        if ( (curr->arch.hvm_vcpu.guest_cr[0] & X86_CR0_EM) ||
-             !(curr->arch.hvm_vcpu.guest_cr[4] & X86_CR4_OSFXSR) )
-            return X86EMUL_UNHANDLEABLE;
         break;
     case X86EMUL_FPU_ymm:
-        if ( !(curr->arch.hvm_vcpu.guest_cr[0] & X86_CR0_PE) ||
-             (ctxt->regs->eflags & X86_EFLAGS_VM) ||
-             !(curr->arch.hvm_vcpu.guest_cr[4] & X86_CR4_OSXSAVE) ||
-             !(curr->arch.xcr0 & XSTATE_SSE) ||
+        if ( !(curr->arch.xcr0 & XSTATE_SSE) ||
              !(curr->arch.xcr0 & XSTATE_YMM) )
             return X86EMUL_UNHANDLEABLE;
         break;
@@ -1766,15 +1746,14 @@ static const struct x86_emulate_ops hvm_emulate_ops_no_write = {
     .vmfunc        = hvmemul_vmfunc,
 };
 
-static int _hvm_emulate_one(struct hvm_emulate_ctxt *hvmemul_ctxt,
-    const struct x86_emulate_ops *ops)
+void hvm_emulate_init(
+    struct hvm_emulate_ctxt *hvmemul_ctxt,
+    const unsigned char *insn_buf,
+    unsigned int insn_bytes)
 {
-    struct cpu_user_regs *regs = hvmemul_ctxt->ctxt.regs;
     struct vcpu *curr = current;
-    uint32_t new_intr_shadow, pfec = PFEC_page_present;
-    struct hvm_vcpu_io *vio = &curr->arch.hvm_vcpu.hvm_io;
+    unsigned int pfec = PFEC_page_present;
     unsigned long addr;
-    int rc;
 
     if ( hvm_long_mode_enabled(curr) &&
          hvmemul_ctxt->seg_reg[x86_seg_cs].attr.fields.l )
@@ -1792,14 +1771,14 @@ static int _hvm_emulate_one(struct hvm_emulate_ctxt *hvmemul_ctxt,
     if ( hvmemul_ctxt->seg_reg[x86_seg_ss].attr.fields.dpl == 3 )
         pfec |= PFEC_user_mode;
 
-    hvmemul_ctxt->insn_buf_eip = regs->eip;
-    if ( !vio->mmio_insn_bytes )
+    hvmemul_ctxt->insn_buf_eip = hvmemul_ctxt->ctxt.regs->eip;
+    if ( !insn_bytes )
     {
         hvmemul_ctxt->insn_buf_bytes =
             hvm_get_insn_bytes(curr, hvmemul_ctxt->insn_buf) ?:
             (hvm_virtual_to_linear_addr(x86_seg_cs,
                                         &hvmemul_ctxt->seg_reg[x86_seg_cs],
-                                        regs->eip,
+                                        hvmemul_ctxt->insn_buf_eip,
                                         sizeof(hvmemul_ctxt->insn_buf),
                                         hvm_access_insn_fetch,
                                         hvmemul_ctxt->ctxt.addr_size,
@@ -1811,11 +1790,24 @@ static int _hvm_emulate_one(struct hvm_emulate_ctxt *hvmemul_ctxt,
     }
     else
     {
-        hvmemul_ctxt->insn_buf_bytes = vio->mmio_insn_bytes;
-        memcpy(hvmemul_ctxt->insn_buf, vio->mmio_insn, vio->mmio_insn_bytes);
+        hvmemul_ctxt->insn_buf_bytes = insn_bytes;
+        memcpy(hvmemul_ctxt->insn_buf, insn_buf, insn_bytes);
     }
 
     hvmemul_ctxt->exn_pending = 0;
+}
+
+static int _hvm_emulate_one(struct hvm_emulate_ctxt *hvmemul_ctxt,
+    const struct x86_emulate_ops *ops)
+{
+    const struct cpu_user_regs *regs = hvmemul_ctxt->ctxt.regs;
+    struct vcpu *curr = current;
+    uint32_t new_intr_shadow;
+    struct hvm_vcpu_io *vio = &curr->arch.hvm_vcpu.hvm_io;
+    int rc;
+
+    hvm_emulate_init(hvmemul_ctxt, vio->mmio_insn, vio->mmio_insn_bytes);
+
     vio->mmio_retry = 0;
 
     if ( cpu_has_vmx )
@@ -1931,7 +1923,7 @@ int hvm_emulate_one_mmio(unsigned long mfn, unsigned long gla)
     return rc;
 }
 
-void hvm_mem_access_emulate_one(enum emul_kind kind, unsigned int trapnr,
+void hvm_emulate_one_vm_event(enum emul_kind kind, unsigned int trapnr,
     unsigned int errcode)
 {
     struct hvm_emulate_ctxt ctx = {{ 0 }};
@@ -1944,10 +1936,25 @@ void hvm_mem_access_emulate_one(enum emul_kind kind, unsigned int trapnr,
     case EMUL_KIND_NOWRITE:
         rc = hvm_emulate_one_no_write(&ctx);
         break;
-    case EMUL_KIND_SET_CONTEXT:
-        ctx.set_context = 1;
-        /* Intentional fall-through. */
+    case EMUL_KIND_SET_CONTEXT_INSN: {
+        struct vcpu *curr = current;
+        struct hvm_vcpu_io *vio = &curr->arch.hvm_vcpu.hvm_io;
+
+        BUILD_BUG_ON(sizeof(vio->mmio_insn) !=
+                     sizeof(curr->arch.vm_event->emul.insn.data));
+        ASSERT(!vio->mmio_insn_bytes);
+
+        /*
+         * Stash insn buffer into mmio buffer here instead of ctx
+         * to avoid having to add more logic to hvm_emulate_one.
+         */
+        vio->mmio_insn_bytes = sizeof(vio->mmio_insn);
+        memcpy(vio->mmio_insn, curr->arch.vm_event->emul.insn.data,
+               vio->mmio_insn_bytes);
+    }
+    /* Fall-through */
     default:
+        ctx.set_context = (kind == EMUL_KIND_SET_CONTEXT_DATA);
         rc = hvm_emulate_one(&ctx);
     }
 

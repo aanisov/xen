@@ -545,25 +545,31 @@ int arch_domain_create(struct domain *d, unsigned int domcr_flags,
     }
     else
     {
-        if ( (config->emulation_flags & ~XEN_X86_EMU_ALL) != 0 )
-        {
-            printk(XENLOG_G_ERR "d%d: Invalid emulation bitmap: %#x\n",
-                   d->domain_id, config->emulation_flags);
-            return -EINVAL;
-        }
+        uint32_t emflags;
+
         if ( is_hardware_domain(d) )
             config->emulation_flags |= XEN_X86_EMU_PIT;
-        if ( config->emulation_flags != 0 &&
-             (config->emulation_flags !=
-              (is_hvm_domain(d) ? XEN_X86_EMU_ALL : XEN_X86_EMU_PIT)) )
+
+        emflags = config->emulation_flags;
+        if ( emflags & ~XEN_X86_EMU_ALL )
+        {
+            printk(XENLOG_G_ERR "d%d: Invalid emulation bitmap: %#x\n",
+                   d->domain_id, emflags);
+            return -EINVAL;
+        }
+
+        /* PVHv2 guests can request emulated APIC. */
+        if ( emflags &&
+            (is_hvm_domain(d) ? ((emflags != XEN_X86_EMU_ALL) &&
+                                 (emflags != XEN_X86_EMU_LAPIC)) :
+                                (emflags != XEN_X86_EMU_PIT)) )
         {
             printk(XENLOG_G_ERR "d%d: Xen does not allow %s domain creation "
                    "with the current selection of emulators: %#x\n",
-                   d->domain_id, is_hvm_domain(d) ? "HVM" : "PV",
-                   config->emulation_flags);
+                   d->domain_id, is_hvm_domain(d) ? "HVM" : "PV", emflags);
             return -EOPNOTSUPP;
         }
-        d->arch.emulation_flags = config->emulation_flags;
+        d->arch.emulation_flags = emflags;
     }
 
     if ( has_hvm_container_domain(d) )
@@ -1745,22 +1751,22 @@ static void load_segments(struct vcpu *n)
             (unsigned long *)pv->kernel_sp;
         unsigned long cs_and_mask, rflags;
 
+        /* Fold upcall mask and architectural IOPL into RFLAGS.IF. */
+        rflags  = regs->rflags & ~(X86_EFLAGS_IF|X86_EFLAGS_IOPL);
+        rflags |= !vcpu_info(n, evtchn_upcall_mask) << 9;
+        if ( VM_ASSIST(n->domain, architectural_iopl) )
+            rflags |= n->arch.pv_vcpu.iopl;
+
         if ( is_pv_32bit_vcpu(n) )
         {
             unsigned int *esp = ring_1(regs) ?
                                 (unsigned int *)regs->rsp :
                                 (unsigned int *)pv->kernel_sp;
-            unsigned int cs_and_mask, eflags;
             int ret = 0;
 
             /* CS longword also contains full evtchn_upcall_mask. */
             cs_and_mask = (unsigned short)regs->cs |
                 ((unsigned int)vcpu_info(n, evtchn_upcall_mask) << 16);
-            /* Fold upcall mask into RFLAGS.IF. */
-            eflags  = regs->_eflags & ~(X86_EFLAGS_IF|X86_EFLAGS_IOPL);
-            eflags |= !vcpu_info(n, evtchn_upcall_mask) << 9;
-            if ( VM_ASSIST(n->domain, architectural_iopl) )
-                eflags |= n->arch.pv_vcpu.iopl;
 
             if ( !ring_1(regs) )
             {
@@ -1770,7 +1776,7 @@ static void load_segments(struct vcpu *n)
             }
 
             if ( ret |
-                 put_user(eflags,              esp-1) |
+                 put_user(rflags,              esp-1) |
                  put_user(cs_and_mask,         esp-2) |
                  put_user(regs->_eip,          esp-3) |
                  put_user(uregs->gs,           esp-4) |
@@ -1804,12 +1810,6 @@ static void load_segments(struct vcpu *n)
         /* CS longword also contains full evtchn_upcall_mask. */
         cs_and_mask = (unsigned long)regs->cs |
             ((unsigned long)vcpu_info(n, evtchn_upcall_mask) << 32);
-
-        /* Fold upcall mask into RFLAGS.IF. */
-        rflags  = regs->rflags & ~(X86_EFLAGS_IF|X86_EFLAGS_IOPL);
-        rflags |= !vcpu_info(n, evtchn_upcall_mask) << 9;
-        if ( VM_ASSIST(n->domain, architectural_iopl) )
-            rflags |= n->arch.pv_vcpu.iopl;
 
         if ( put_user(regs->ss,            rsp- 1) |
              put_user(regs->rsp,           rsp- 2) |

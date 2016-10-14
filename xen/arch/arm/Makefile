@@ -3,8 +3,9 @@ subdir-$(CONFIG_ARM_64) += arm64
 subdir-y += platforms
 subdir-$(CONFIG_ARM_64) += efi
 subdir-$(CONFIG_ACPI) += acpi
+subdir-$(CONFIG_HAS_COPROC) += coproc
 
-obj-$(CONFIG_ALTERNATIVE) += alternative.o
+obj-$(CONFIG_HAS_ALTERNATIVE) += alternative.o
 obj-y += bootfdt.o
 obj-y += cpu.o
 obj-y += cpuerrata.o
@@ -25,6 +26,7 @@ obj-y += irq.o
 obj-y += kernel.o
 obj-$(CONFIG_LIVEPATCH) += livepatch.o
 obj-y += mm.o
+obj-y += monitor.o
 obj-y += p2m.o
 obj-y += percpu.o
 obj-y += platform.o
@@ -59,14 +61,20 @@ ALL_OBJS := $(TARGET_SUBARCH)/head.o $(ALL_OBJS)
 
 DEPS += $(TARGET_SUBARCH)/.head.o.d
 
+ifdef CONFIG_LIVEPATCH
+all_symbols = --all-symbols
+ifdef CONFIG_FAST_SYMBOL_LOOKUP
+all_symbols = --all-symbols --sort-by-name
+endif
+else
+all_symbols =
+endif
+
 $(TARGET): $(TARGET)-syms $(TARGET).axf
 	$(OBJCOPY) -O binary -S $< $@
 ifeq ($(CONFIG_ARM_64),y)
 	ln -sf $(notdir $@)  ../../$(notdir $@).efi
 endif
-
-.PHONY: tests
-tests:
 
 $(TARGET).axf: $(TARGET)-syms
 	# XXX: VE model loads by VMA so instead of
@@ -94,12 +102,12 @@ $(TARGET)-syms: prelink.o xen.lds $(BASEDIR)/common/symbols-dummy.o
 	$(LD) $(LDFLAGS) -T xen.lds -N prelink.o \
 	    $(BASEDIR)/common/symbols-dummy.o -o $(@D)/.$(@F).0
 	$(NM) -pa --format=sysv $(@D)/.$(@F).0 \
-		| $(BASEDIR)/tools/symbols --sysv --sort >$(@D)/.$(@F).0.S
+		| $(BASEDIR)/tools/symbols $(all_symbols) --sysv --sort >$(@D)/.$(@F).0.S
 	$(MAKE) -f $(BASEDIR)/Rules.mk $(@D)/.$(@F).0.o
 	$(LD) $(LDFLAGS) -T xen.lds -N prelink.o \
 	    $(@D)/.$(@F).0.o -o $(@D)/.$(@F).1
 	$(NM) -pa --format=sysv $(@D)/.$(@F).1 \
-		| $(BASEDIR)/tools/symbols --sysv --sort >$(@D)/.$(@F).1.S
+		| $(BASEDIR)/tools/symbols $(all_symbols) --sysv --sort >$(@D)/.$(@F).1.S
 	$(MAKE) -f $(BASEDIR)/Rules.mk $(@D)/.$(@F).1.o
 	$(LD) $(LDFLAGS) -T xen.lds -N prelink.o $(build_id_linker) \
 	    $(@D)/.$(@F).1.o -o $@

@@ -66,6 +66,17 @@
 #define PAGE_HYPERVISOR_WC      (DEV_WC)
 
 /*
+ * Defines for changing the hypervisor PTE .ro and .nx bits. This is only to be
+ * used with modify_xen_mappings.
+ */
+#define _PTE_NX_BIT     0U
+#define _PTE_RO_BIT     1U
+#define PTE_NX          (1U << _PTE_NX_BIT)
+#define PTE_RO          (1U << _PTE_RO_BIT)
+#define PTE_NX_MASK(x)  (((x) >> _PTE_NX_BIT) & 0x1U)
+#define PTE_RO_MASK(x)  (((x) >> _PTE_RO_BIT) & 0x1U)
+
+/*
  * Stage 2 Memory Type.
  *
  * These are valid in the MemAttr[3:0] field of an LPAE stage 2 page
@@ -73,6 +84,7 @@
  *
  */
 #define MATTR_DEV     0x1
+#define MATTR_MEM_NC  0x5
 #define MATTR_MEM     0xf
 
 /* Flags for get_page_from_gva, gvirt_to_maddr etc */
@@ -165,6 +177,10 @@ typedef struct __packed {
 
     unsigned long sbz1:5;
 } lpae_p2m_t;
+
+/* Permission mask: xn, write, read */
+#define P2M_PERM_MASK (0x00400000000000C0ULL)
+#define P2M_CLEAR_PERM(pte) ((pte).bits & ~P2M_PERM_MASK)
 
 /*
  * Walk is the common bits of p2m and pt entries which are needed to
@@ -457,15 +473,19 @@ static inline int gva_to_ipa(vaddr_t va, paddr_t *paddr, unsigned int flags)
 #define LPAE_ENTRY_MASK (LPAE_ENTRIES - 1)
 
 #define THIRD_SHIFT    (PAGE_SHIFT)
+#define THIRD_ORDER    (THIRD_SHIFT - PAGE_SHIFT)
 #define THIRD_SIZE     ((paddr_t)1 << THIRD_SHIFT)
 #define THIRD_MASK     (~(THIRD_SIZE - 1))
 #define SECOND_SHIFT   (THIRD_SHIFT + LPAE_SHIFT)
+#define SECOND_ORDER   (SECOND_SHIFT - PAGE_SHIFT)
 #define SECOND_SIZE    ((paddr_t)1 << SECOND_SHIFT)
 #define SECOND_MASK    (~(SECOND_SIZE - 1))
 #define FIRST_SHIFT    (SECOND_SHIFT + LPAE_SHIFT)
+#define FIRST_ORDER    (FIRST_SHIFT - PAGE_SHIFT)
 #define FIRST_SIZE     ((paddr_t)1 << FIRST_SHIFT)
 #define FIRST_MASK     (~(FIRST_SIZE - 1))
 #define ZEROETH_SHIFT  (FIRST_SHIFT + LPAE_SHIFT)
+#define ZEROETH_ORDER  (ZEROETH_SHIFT - PAGE_SHIFT)
 #define ZEROETH_SIZE   ((paddr_t)1 << ZEROETH_SHIFT)
 #define ZEROETH_MASK   (~(ZEROETH_SIZE - 1))
 

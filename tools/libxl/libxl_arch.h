@@ -62,4 +62,22 @@ int libxl__arch_domain_construct_memmap(libxl__gc *gc,
                                         uint32_t domid,
                                         struct xc_dom_image *dom);
 
+_hidden
+void libxl__arch_domain_build_info_acpi_setdefault(
+                                        libxl_domain_build_info *b_info);
+
+_hidden
+int libxl__arch_extra_memory(libxl__gc *gc,
+                             const libxl_domain_build_info *info,
+                             uint64_t *out);
+
+#if defined(__i386__) || defined(__x86_64__)
+
+#define LAPIC_BASE_ADDRESS  0xfee00000
+
+int libxl__dom_load_acpi(libxl__gc *gc,
+                         const libxl_domain_build_info *b_info,
+                         struct xc_dom_image *dom);
+#endif
+
 #endif

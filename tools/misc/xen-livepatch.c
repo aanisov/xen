@@ -20,7 +20,7 @@ static xc_interface *xch;
 void show_help(void)
 {
     fprintf(stderr,
-            "xen-livepatch: live patching test tool\n"
+            "xen-livepatch: live patching tool\n"
             "Usage: xen-livepatch <command> [args]\n"
             " <name> An unique name of payload. Up to %d characters.\n"
             "Commands:\n"
@@ -91,8 +91,6 @@ static int list_func(int argc, char *argv[])
         return rc;
     }
 
-    fprintf(stdout," ID                                     | status\n"
-                   "----------------------------------------+------------\n");
     do {
         done = 0;
         /* The memset is done to catch errors. */
@@ -106,6 +104,10 @@ static int list_func(int argc, char *argv[])
                     idx, left, errno, strerror(errno));
             break;
         }
+        if ( !idx )
+            fprintf(stdout," ID                                     | status\n"
+                           "----------------------------------------+------------\n");
+
         for ( i = 0; i < done; i++ )
         {
             unsigned int j;

@@ -487,15 +487,22 @@ void hvm_do_resume(struct vcpu *v)
         {
             enum emul_kind kind = EMUL_KIND_NORMAL;
 
+            /*
+             * Please observ the order here to match the flag descriptions
+             * provided in public/vm_event.h
+             */
             if ( v->arch.vm_event->emulate_flags &
                  VM_EVENT_FLAG_SET_EMUL_READ_DATA )
-                kind = EMUL_KIND_SET_CONTEXT;
+                kind = EMUL_KIND_SET_CONTEXT_DATA;
             else if ( v->arch.vm_event->emulate_flags &
                       VM_EVENT_FLAG_EMULATE_NOWRITE )
                 kind = EMUL_KIND_NOWRITE;
+            else if ( v->arch.vm_event->emulate_flags &
+                      VM_EVENT_FLAG_SET_EMUL_INSN_DATA )
+                kind = EMUL_KIND_SET_CONTEXT_INSN;
 
-            hvm_mem_access_emulate_one(kind, TRAP_invalid_op,
-                                       HVM_DELIVER_NO_ERROR_CODE);
+            hvm_emulate_one_vm_event(kind, TRAP_invalid_op,
+                                     HVM_DELIVER_NO_ERROR_CODE);
 
             v->arch.vm_event->emulate_flags = 0;
         }
@@ -1959,11 +1966,11 @@ int hvm_hap_nested_page_fault(paddr_t gpa, unsigned long gla,
      * Otherwise, this is an error condition. */
     rc = fall_through;
 
-out_put_gfn:
+ out_put_gfn:
     __put_gfn(p2m, gfn);
     if ( ap2m_active )
         __put_gfn(hostp2m, gfn);
-out:
+ out:
     /* All of these are delayed until we exit, since we might 
      * sleep on event ring wait queues, and we must not hold
      * locks in such circumstance */
@@ -2723,6 +2730,7 @@ static int hvm_load_segment_selector(
         if ( (seg == x86_seg_cs) || (seg == x86_seg_ss) )
             goto fail;
         memset(&segr, 0, sizeof(segr));
+        segr.sel = sel;
         hvm_set_segment_register(v, seg, &segr);
         return 0;
     }
@@ -2749,7 +2757,8 @@ static int hvm_load_segment_selector(
         /* Segment present in memory? */
         if ( !(desc.b & _SEGMENT_P) )
         {
-            fault_type = TRAP_no_segment;
+            fault_type = (seg != x86_seg_ss) ? TRAP_no_segment
+                                             : TRAP_stack_error;
             goto unmap_and_fail;
         }
 
@@ -5308,12 +5317,25 @@ static int do_altp2m_op(
         return -EFAULT;
 
     if ( a.pad1 || a.pad2 ||
-         (a.version != HVMOP_ALTP2M_INTERFACE_VERSION) ||
-         (a.cmd < HVMOP_altp2m_get_domain_state) ||
-         (a.cmd > HVMOP_altp2m_change_gfn) )
+         (a.version != HVMOP_ALTP2M_INTERFACE_VERSION) )
         return -EINVAL;
 
-    d = (a.cmd != HVMOP_altp2m_vcpu_enable_notify) ?
+    switch ( a.cmd )
+    {
+    case HVMOP_altp2m_get_domain_state:
+    case HVMOP_altp2m_set_domain_state:
+    case HVMOP_altp2m_vcpu_enable_notify:
+    case HVMOP_altp2m_create_p2m:
+    case HVMOP_altp2m_destroy_p2m:
+    case HVMOP_altp2m_switch_p2m:
+    case HVMOP_altp2m_set_mem_access:
+    case HVMOP_altp2m_change_gfn:
+        break;
+    default:
+        return -EOPNOTSUPP;
+    }
+
+    d = ( a.cmd != HVMOP_altp2m_vcpu_enable_notify ) ?
         rcu_lock_domain_by_any_id(a.domain) : rcu_lock_current_domain();
 
     if ( d == NULL )
@@ -5430,6 +5452,9 @@ static int do_altp2m_op(
             rc = p2m_change_altp2m_gfn(d, a.u.change_gfn.view,
                     _gfn(a.u.change_gfn.old_gfn),
                     _gfn(a.u.change_gfn.new_gfn));
+        break;
+    default:
+        ASSERT_UNREACHABLE();
     }
 
  out:
@@ -5952,25 +5977,6 @@ void hvm_toggle_singlestep(struct vcpu *v)
         return;
 
     v->arch.hvm_vcpu.single_step = !v->arch.hvm_vcpu.single_step;
-}
-
-void altp2m_vcpu_update_p2m(struct vcpu *v)
-{
-    if ( hvm_funcs.altp2m_vcpu_update_p2m )
-        hvm_funcs.altp2m_vcpu_update_p2m(v);
-}
-
-void altp2m_vcpu_update_vmfunc_ve(struct vcpu *v)
-{
-    if ( hvm_funcs.altp2m_vcpu_update_vmfunc_ve )
-        hvm_funcs.altp2m_vcpu_update_vmfunc_ve(v);
-}
-
-bool_t altp2m_vcpu_emulate_ve(struct vcpu *v)
-{
-    if ( hvm_funcs.altp2m_vcpu_emulate_ve )
-        return hvm_funcs.altp2m_vcpu_emulate_ve(v);
-    return 0;
 }
 
 int hvm_set_mode(struct vcpu *v, int mode)

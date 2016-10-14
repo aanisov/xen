@@ -24,6 +24,7 @@
 #include <xen/symbols.h>
 #include <xen/irq.h>
 #include <xen/lib.h>
+#include <xen/livepatch.h>
 #include <xen/mm.h>
 #include <xen/errno.h>
 #include <xen/hypercall.h>
@@ -41,6 +42,7 @@
 #include <asm/mmio.h>
 #include <asm/cpufeature.h>
 #include <asm/flushtlb.h>
+#include <asm/monitor.h>
 
 #include "decode.h"
 #include "vtimer.h"
@@ -2404,45 +2406,92 @@ static void do_trap_instr_abort_guest(struct cpu_user_regs *regs,
     int rc;
     register_t gva = READ_SYSREG(FAR_EL2);
     uint8_t fsc = hsr.iabt.ifsc & ~FSC_LL_MASK;
+    paddr_t gpa;
+    mfn_t mfn;
+
+    if ( hpfar_is_valid(hsr.iabt.s1ptw, fsc) )
+        gpa = get_faulting_ipa(gva);
+    else
+    {
+        /*
+         * Flush the TLB to make sure the DTLB is clear before
+         * doing GVA->IPA translation. If we got here because of
+         * an entry only present in the ITLB, this translation may
+         * still be inaccurate.
+         */
+        flush_tlb_local();
+
+        /*
+         * We may not be able to translate because someone is
+         * playing with the Stage-2 page table of the domain.
+         * Return to the guest.
+         */
+        rc = gva_to_ipa(gva, &gpa, GV2M_READ);
+        if ( rc == -EFAULT )
+            return; /* Try again */
+    }
 
     switch ( fsc )
     {
     case FSC_FLT_PERM:
     {
-        paddr_t gpa;
         const struct npfec npfec = {
             .insn_fetch = 1,
             .gla_valid = 1,
             .kind = hsr.iabt.s1ptw ? npfec_kind_in_gpt : npfec_kind_with_gla
         };
 
-        if ( hpfar_is_valid(hsr.iabt.s1ptw, fsc) )
-            gpa = get_faulting_ipa(gva);
-        else
-        {
-            /*
-             * Flush the TLB to make sure the DTLB is clear before
-             * doing GVA->IPA translation. If we got here because of
-             * an entry only present in the ITLB, this translation may
-             * still be inaccurate.
-             */
-            flush_tlb_local();
-
-            rc = gva_to_ipa(gva, &gpa, GV2M_READ);
-            if ( rc == -EFAULT )
-                return; /* Try again */
-        }
-
-        rc = p2m_mem_access_check(gpa, gva, npfec);
-
-        /* Trap was triggered by mem_access, work here is done */
-        if ( !rc )
-            return;
+        p2m_mem_access_check(gpa, gva, npfec);
+        /*
+         * The only way to get here right now is because of mem_access,
+         * thus reinjecting the exception to the guest is never required.
+         */
+        return;
     }
-    break;
+    case FSC_FLT_TRANS:
+        /*
+         * The PT walk may have failed because someone was playing
+         * with the Stage-2 page table. Walk the Stage-2 PT to check
+         * if the entry exists. If it's the case, return to the guest
+         */
+        mfn = p2m_lookup(current->domain, _gfn(paddr_to_pfn(gpa)), NULL);
+        if ( !mfn_eq(mfn, INVALID_MFN) )
+            return;
     }
 
     inject_iabt_exception(regs, gva, hsr.len);
+}
+
+static bool try_handle_mmio(struct cpu_user_regs *regs,
+                            mmio_info_t *info)
+{
+    const struct hsr_dabt dabt = info->dabt;
+    int rc;
+
+    /* stage-1 page table should never live in an emulated MMIO region */
+    if ( dabt.s1ptw )
+        return false;
+
+    /* All the instructions used on emulated MMIO region should be valid */
+    if ( !dabt.valid )
+        return false;
+
+    /*
+     * Erratum 766422: Thumb store translation fault to Hypervisor may
+     * not have correct HSR Rt value.
+     */
+    if ( check_workaround_766422() && (regs->cpsr & PSR_THUMB) &&
+         dabt.write )
+    {
+        rc = decode_instruction(regs, &info->dabt);
+        if ( rc )
+        {
+            gprintk(XENLOG_DEBUG, "Unable to decode instruction\n");
+            return false;
+        }
+    }
+
+    return !!handle_mmio(info);
 }
 
 static void do_trap_data_abort_guest(struct cpu_user_regs *regs,
@@ -2452,6 +2501,7 @@ static void do_trap_data_abort_guest(struct cpu_user_regs *regs,
     int rc;
     mmio_info_t info;
     uint8_t fsc = hsr.dabt.dfsc & ~FSC_LL_MASK;
+    mfn_t mfn;
 
     info.dabt = dabt;
 #ifdef CONFIG_ARM_32
@@ -2465,6 +2515,11 @@ static void do_trap_data_abort_guest(struct cpu_user_regs *regs,
     else
     {
         rc = gva_to_ipa(info.gva, &info.gpa, GV2M_READ);
+        /*
+         * We may not be able to translate because someone is
+         * playing with the Stage-2 page table of the domain.
+         * Return to the guest.
+         */
         if ( rc == -EFAULT )
             return; /* Try again */
     }
@@ -2480,51 +2535,53 @@ static void do_trap_data_abort_guest(struct cpu_user_regs *regs,
             .kind = dabt.s1ptw ? npfec_kind_in_gpt : npfec_kind_with_gla
         };
 
-        rc = p2m_mem_access_check(info.gpa, info.gva, npfec);
-
-        /* Trap was triggered by mem_access, work here is done */
-        if ( !rc )
-            return;
-        break;
+        p2m_mem_access_check(info.gpa, info.gva, npfec);
+        /*
+         * The only way to get here right now is because of mem_access,
+         * thus reinjecting the exception to the guest is never required.
+         */
+        return;
     }
     case FSC_FLT_TRANS:
-        if ( dabt.s1ptw )
-            goto bad_data_abort;
-
-        /* XXX: Decode the instruction if ISS is not valid */
-        if ( !dabt.valid )
-            goto bad_data_abort;
-
         /*
-         * Erratum 766422: Thumb store translation fault to Hypervisor may
-         * not have correct HSR Rt value.
+         * Attempt first to emulate the MMIO as the data abort will
+         * likely happen in an emulated region.
          */
-        if ( check_workaround_766422() && (regs->cpsr & PSR_THUMB) &&
-             dabt.write )
-        {
-            rc = decode_instruction(regs, &info.dabt);
-            if ( rc )
-            {
-                gprintk(XENLOG_DEBUG, "Unable to decode instruction\n");
-                goto bad_data_abort;
-            }
-        }
-
-        if ( handle_mmio(&info) )
+        if ( try_handle_mmio(regs, &info) )
         {
             advance_pc(regs, hsr);
             return;
         }
+
+        /*
+         * The PT walk may have failed because someone was playing
+         * with the Stage-2 page table. Walk the Stage-2 PT to check
+         * if the entry exists. If it's the case, return to the guest
+         */
+        mfn = p2m_lookup(current->domain, _gfn(paddr_to_pfn(info.gpa)), NULL);
+        if ( !mfn_eq(mfn, INVALID_MFN) )
+            return;
+
         break;
     default:
         gprintk(XENLOG_WARNING, "Unsupported DFSC: HSR=%#x DFSC=%#x\n",
                 hsr.bits, dabt.dfsc);
     }
 
-bad_data_abort:
     gdprintk(XENLOG_DEBUG, "HSR=0x%x pc=%#"PRIregister" gva=%#"PRIvaddr
              " gpa=%#"PRIpaddr"\n", hsr.bits, regs->pc, info.gva, info.gpa);
     inject_dabt_exception(regs, info.gva, hsr.len);
+}
+
+static void do_trap_smc(struct cpu_user_regs *regs, const union hsr hsr)
+{
+    int rc = 0;
+
+    if ( current->domain->arch.monitor.privileged_call_enabled )
+        rc = monitor_smc();
+
+    if ( rc != 1 )
+        inject_undef_exception(regs, hsr);
 }
 
 static void enter_hypervisor_head(struct cpu_user_regs *regs)
@@ -2602,7 +2659,7 @@ asmlinkage void do_trap_hypervisor(struct cpu_user_regs *regs)
          */
         GUEST_BUG_ON(!psr_mode_is_32bit(regs->cpsr));
         perfc_incr(trap_smc32);
-        inject_undef32_exception(regs);
+        do_trap_smc(regs, hsr);
         break;
     case HSR_EC_HVC32:
         GUEST_BUG_ON(!psr_mode_is_32bit(regs->cpsr));
@@ -2635,7 +2692,7 @@ asmlinkage void do_trap_hypervisor(struct cpu_user_regs *regs)
          */
         GUEST_BUG_ON(psr_mode_is_32bit(regs->cpsr));
         perfc_incr(trap_smc64);
-        inject_undef64_exception(regs, hsr.len);
+        do_trap_smc(regs, hsr);
         break;
     case HSR_EC_SYSREG:
         GUEST_BUG_ON(psr_mode_is_32bit(regs->cpsr));
@@ -2689,6 +2746,11 @@ asmlinkage void leave_hypervisor_tail(void)
         }
         local_irq_enable();
         do_softirq();
+        /*
+         * Must be the last one - as the IPI will trigger us to come here
+         * and we want to patch the hypervisor with almost no stack.
+         */
+        check_for_livepatch_work();
     }
 }
 

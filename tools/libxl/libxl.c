@@ -17,6 +17,7 @@
 #include "libxl_osdeps.h"
 
 #include "libxl_internal.h"
+#include "libxl_arch.h"
 
 #define PAGE_TO_MEMKB(pages) ((pages) * 4)
 #define BACKEND_STRING_SIZE 5
@@ -4022,10 +4023,13 @@ int libxl_domain_setmaxmem(libxl_ctx *ctx, uint32_t domid, uint64_t max_memkb)
 {
     GC_INIT(ctx);
     char *mem, *endptr;
-    uint64_t memorykb;
+    uint64_t memorykb, size;
     char *dompath = libxl__xs_get_dompath(gc, domid);
     int rc = 1;
     libxl__domain_userdata_lock *lock = NULL;
+    libxl_domain_config d_config;
+
+    libxl_domain_config_init(&d_config);
 
     CTX_LOCK;
 
@@ -4051,16 +4055,30 @@ int libxl_domain_setmaxmem(libxl_ctx *ctx, uint32_t domid, uint64_t max_memkb)
              "memory_static_max must be greater than or or equal to memory_dynamic_max");
         goto out;
     }
-    rc = xc_domain_setmaxmem(ctx->xch, domid, max_memkb + LIBXL_MAXMEM_CONSTANT);
+
+    rc = libxl__get_domain_configuration(gc, domid, &d_config);
+    if (rc < 0) {
+        LOGE(ERROR, "unable to retrieve domain configuration");
+        goto out;
+    }
+
+    rc = libxl__arch_extra_memory(gc, &d_config.b_info, &size);
+    if (rc < 0) {
+        LOGE(ERROR, "Couldn't get arch extra constant memory size");
+        goto out;
+    }
+
+    rc = xc_domain_setmaxmem(ctx->xch, domid, max_memkb + size);
     if (rc != 0) {
         LOGE(ERROR,
              "xc_domain_setmaxmem domid=%d memkb=%"PRIu64" failed ""rc=%d\n",
-             domid, max_memkb + LIBXL_MAXMEM_CONSTANT, rc);
+             domid, max_memkb + size, rc);
         goto out;
     }
 
     rc = 0;
 out:
+    libxl_domain_config_dispose(&d_config);
     if (lock) libxl__unlock_domain_userdata(lock);
     CTX_UNLOCK;
     GC_FREE;
@@ -4149,7 +4167,7 @@ int libxl_set_memory_target(libxl_ctx *ctx, uint32_t domid,
 {
     GC_INIT(ctx);
     int rc, r, lrc, abort_transaction = 0;
-    uint64_t memorykb;
+    uint64_t memorykb, size;
     uint64_t videoram = 0;
     uint64_t current_target_memkb = 0, new_target_memkb = 0;
     uint64_t current_max_memkb = 0;
@@ -4160,12 +4178,27 @@ int libxl_set_memory_target(libxl_ctx *ctx, uint32_t domid,
     char *uuid;
     xs_transaction_t t;
     libxl__domain_userdata_lock *lock;
+    libxl_domain_config d_config;
+
+    libxl_domain_config_init(&d_config);
 
     CTX_LOCK;
 
     lock = libxl__lock_domain_userdata(gc, domid);
     if (!lock) {
         rc = ERROR_LOCK_FAIL;
+        goto out_no_transaction;
+    }
+
+    rc = libxl__get_domain_configuration(gc, domid, &d_config);
+    if (rc < 0) {
+        LOGE(ERROR, "unable to retrieve domain configuration");
+        goto out_no_transaction;
+    }
+
+    rc = libxl__arch_extra_memory(gc, &d_config.b_info, &size);
+    if (rc < 0) {
+        LOGE(ERROR, "Couldn't get arch extra constant memory size");
         goto out_no_transaction;
     }
 
@@ -4246,13 +4279,12 @@ retry_transaction:
 
     if (enforce) {
         memorykb = new_target_memkb + videoram;
-        r = xc_domain_setmaxmem(ctx->xch, domid, memorykb +
-                LIBXL_MAXMEM_CONSTANT);
+        r = xc_domain_setmaxmem(ctx->xch, domid, memorykb + size);
         if (r != 0) {
             LOGE(ERROR,
                  "xc_domain_setmaxmem domid=%u memkb=%"PRIu64" failed ""rc=%d\n",
                  domid,
-                 memorykb + LIBXL_MAXMEM_CONSTANT,
+                 memorykb + size,
                  r);
             abort_transaction = 1;
             rc = ERROR_FAIL;
@@ -4261,12 +4293,12 @@ retry_transaction:
     }
 
     r = xc_domain_set_pod_target(ctx->xch, domid,
-            (new_target_memkb + LIBXL_MAXMEM_CONSTANT) / 4, NULL, NULL, NULL);
+            (new_target_memkb + size) / 4, NULL, NULL, NULL);
     if (r != 0) {
         LOGE(ERROR,
              "xc_domain_set_pod_target domid=%d, memkb=%"PRIu64" failed rc=%d\n",
              domid,
-             new_target_memkb / 4,
+             (new_target_memkb + size) / 4,
              r);
         abort_transaction = 1;
         rc = ERROR_FAIL;
@@ -4291,6 +4323,7 @@ out:
             goto retry_transaction;
 
 out_no_transaction:
+    libxl_domain_config_dispose(&d_config);
     if (lock) libxl__unlock_domain_userdata(lock);
     CTX_UNLOCK;
     GC_FREE;
@@ -5229,69 +5262,133 @@ static int sched_credit_domain_set(libxl__gc *gc, uint32_t domid,
     return 0;
 }
 
+static int sched_ratelimit_check(libxl__gc *gc, int ratelimit)
+{
+    if (ratelimit != 0 &&
+        (ratelimit <  XEN_SYSCTL_SCHED_RATELIMIT_MIN ||
+         ratelimit > XEN_SYSCTL_SCHED_RATELIMIT_MAX)) {
+        LOG(ERROR, "Ratelimit out of range, valid range is from %d to %d",
+            XEN_SYSCTL_SCHED_RATELIMIT_MIN, XEN_SYSCTL_SCHED_RATELIMIT_MAX);
+        return ERROR_INVAL;
+    }
+
+    return 0;
+}
+
 int libxl_sched_credit_params_get(libxl_ctx *ctx, uint32_t poolid,
                                   libxl_sched_credit_params *scinfo)
 {
     struct xen_sysctl_credit_schedule sparam;
-    int rc;
+    int r, rc;
     GC_INIT(ctx);
 
-    rc = xc_sched_credit_params_get(ctx->xch, poolid, &sparam);
-    if (rc != 0) {
-        LOGE(ERROR, "getting sched credit param");
-        GC_FREE;
-        return ERROR_FAIL;
+    r = xc_sched_credit_params_get(ctx->xch, poolid, &sparam);
+    if (r < 0) {
+        LOGE(ERROR, "getting Credit scheduler parameters");
+        rc = ERROR_FAIL;
+        goto out;
     }
 
     scinfo->tslice_ms = sparam.tslice_ms;
     scinfo->ratelimit_us = sparam.ratelimit_us;
 
+    rc = 0;
+ out:
     GC_FREE;
-    return 0;
+    return rc;
 }
 
 int libxl_sched_credit_params_set(libxl_ctx *ctx, uint32_t poolid,
                                   libxl_sched_credit_params *scinfo)
 {
     struct xen_sysctl_credit_schedule sparam;
-    int rc=0;
+    int r, rc;
     GC_INIT(ctx);
 
     if (scinfo->tslice_ms <  XEN_SYSCTL_CSCHED_TSLICE_MIN
         || scinfo->tslice_ms > XEN_SYSCTL_CSCHED_TSLICE_MAX) {
         LOG(ERROR, "Time slice out of range, valid range is from %d to %d",
             XEN_SYSCTL_CSCHED_TSLICE_MIN, XEN_SYSCTL_CSCHED_TSLICE_MAX);
-        GC_FREE;
-        return ERROR_INVAL;
+        rc = ERROR_INVAL;
+        goto out;
     }
-    if (scinfo->ratelimit_us <  XEN_SYSCTL_SCHED_RATELIMIT_MIN
-        || scinfo->ratelimit_us > XEN_SYSCTL_SCHED_RATELIMIT_MAX) {
-        LOG(ERROR, "Ratelimit out of range, valid range is from %d to %d",
-            XEN_SYSCTL_SCHED_RATELIMIT_MIN, XEN_SYSCTL_SCHED_RATELIMIT_MAX);
-        GC_FREE;
-        return ERROR_INVAL;
+    rc = sched_ratelimit_check(gc, scinfo->ratelimit_us);
+    if (rc) {
+        goto out;
     }
     if (scinfo->ratelimit_us > scinfo->tslice_ms*1000) {
         LOG(ERROR, "Ratelimit cannot be greater than timeslice");
-        GC_FREE;
-        return ERROR_INVAL;
+        rc = ERROR_INVAL;
+        goto out;
     }
 
     sparam.tslice_ms = scinfo->tslice_ms;
     sparam.ratelimit_us = scinfo->ratelimit_us;
 
-    rc = xc_sched_credit_params_set(ctx->xch, poolid, &sparam);
-    if ( rc < 0 ) {
-        LOGE(ERROR, "setting sched credit param");
-        GC_FREE;
-        return ERROR_FAIL;
+    r = xc_sched_credit_params_set(ctx->xch, poolid, &sparam);
+    if ( r < 0 ) {
+        LOGE(ERROR, "Setting Credit scheduler parameters");
+        rc = ERROR_FAIL;
+        goto out;
     }
 
     scinfo->tslice_ms = sparam.tslice_ms;
     scinfo->ratelimit_us = sparam.ratelimit_us;
 
+    rc = 0;
+ out:
     GC_FREE;
-    return 0;
+    return rc;
+}
+
+int libxl_sched_credit2_params_get(libxl_ctx *ctx, uint32_t poolid,
+                                   libxl_sched_credit2_params *scinfo)
+{
+    struct xen_sysctl_credit2_schedule sparam;
+    int r, rc;
+    GC_INIT(ctx);
+
+    r = xc_sched_credit2_params_get(ctx->xch, poolid, &sparam);
+    if (r < 0) {
+        LOGE(ERROR, "getting Credit2 scheduler parameters");
+        rc = ERROR_FAIL;
+        goto out;
+    }
+
+    scinfo->ratelimit_us = sparam.ratelimit_us;
+
+    rc = 0;
+ out:
+    GC_FREE;
+    return rc;
+}
+
+
+int libxl_sched_credit2_params_set(libxl_ctx *ctx, uint32_t poolid,
+                                   libxl_sched_credit2_params *scinfo)
+{
+    struct xen_sysctl_credit2_schedule sparam;
+    int r, rc;
+    GC_INIT(ctx);
+
+    rc = sched_ratelimit_check(gc, scinfo->ratelimit_us);
+    if (rc) goto out;
+
+    sparam.ratelimit_us = scinfo->ratelimit_us;
+
+    r = xc_sched_credit2_params_set(ctx->xch, poolid, &sparam);
+    if (r < 0) {
+        LOGE(ERROR, "Setting Credit2 scheduler parameters");
+        rc = ERROR_FAIL;
+        goto out;
+    }
+
+    scinfo->ratelimit_us = sparam.ratelimit_us;
+
+    rc = 0;
+ out:
+    GC_FREE;
+    return rc;
 }
 
 static int sched_credit2_domain_get(libxl__gc *gc, uint32_t domid,
@@ -6061,30 +6158,42 @@ out:
     return rc;
 }
 
-static int32_t tmem_setop_from_string(char *set_name)
+static int32_t tmem_setop_from_string(char *set_name, uint32_t val,
+                                      xen_tmem_client_t *info)
 {
     if (!strcmp(set_name, "weight"))
-        return XEN_SYSCTL_TMEM_OP_SET_WEIGHT;
-    else if (!strcmp(set_name, "cap"))
-        return XEN_SYSCTL_TMEM_OP_SET_CAP;
+        info->weight = val;
     else if (!strcmp(set_name, "compress"))
-        return XEN_SYSCTL_TMEM_OP_SET_COMPRESS;
+        info->flags.u.compress = val;
     else
         return -1;
+
+    return 0;
 }
 
 int libxl_tmem_set(libxl_ctx *ctx, uint32_t domid, char* name, uint32_t set)
 {
     int r, rc;
-    int32_t subop = tmem_setop_from_string(name);
+    xen_tmem_client_t info;
     GC_INIT(ctx);
 
-    if (subop == -1) {
-        LOGEV(ERROR, -1, "Invalid set, valid sets are <weight|cap|compress>");
+    r = xc_tmem_control(ctx->xch, -1 /* pool_id */,
+                        XEN_SYSCTL_TMEM_OP_GET_CLIENT_INFO,
+                        domid, sizeof(info), 0 /* arg */, &info);
+    if (r < 0) {
+        LOGE(ERROR, "Can not get tmem data!");
+        rc = ERROR_FAIL;
+        goto out;
+    }
+    rc = tmem_setop_from_string(name, set, &info);
+    if (rc == -1) {
+        LOGEV(ERROR, -1, "Invalid set, valid sets are <weight|compress>");
         rc = ERROR_INVAL;
         goto out;
     }
-    r = xc_tmem_control(ctx->xch, -1, subop, domid, set, 0, NULL);
+    r = xc_tmem_control(ctx->xch, -1 /* pool_id */,
+                        XEN_SYSCTL_TMEM_OP_SET_CLIENT_INFO,
+                        domid, sizeof(info), 0 /* arg */, &info);
     if (r < 0) {
         LOGE(ERROR, "Can not set tmem %s", name);
         rc = ERROR_FAIL;

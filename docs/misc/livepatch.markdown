@@ -318,12 +318,23 @@ The size of the structure is 64 bytes on 64-bit hypervisors. It will be
   payload generation time if hypervisor function address is known. If unknown,
   the value *MUST* be zero and the hypervisor will attempt to resolve the address.
 
-* `new_addr` is the address of the function that is replacing the old
-  function. The address is filled in during relocation. The value **MUST** be
-  the address of the new function in the file.
+* `new_addr` can either have a non-zero value or be zero.
+  * If there is a non-zero value, then it is the address of the function that is
+    replacing the old function and the address is recomputed during relocation.
+    The value **MUST** be the address of the new function in the payload file.
 
-* `old_size` and `new_size` contain the sizes of the respective functions in bytes.
+  * If the value is zero, then we NOPing out at the `old_addr` location
+    `new_size` bytes.
+
+* `old_size` contains the sizes of the respective `old_addr` function in bytes.
    The value of `old_size` **MUST** not be zero.
+
+* `new_size` depends on what `new_addr` contains:
+  * If `new_addr` contains an non-zero value, then `new_size` has the size of
+    the new function (which will replace the one at `old_addr`)  in bytes.
+  * If the value of `new_addr` is zero then `new_size` determines how many
+    instruction bytes to NOP (up to opaque size modulo smallest platform
+    instruction - 1 byte x86 and 4 bytes on ARM).
 
 * `version` is to be one.
 
@@ -339,6 +350,13 @@ The `new_addr` is altered when the ELF payload is loaded.
 When reverting a patch, the hypervisor iterates over each `livepatch_func`
 and the core code copies the data from the undo buffer (private internal copy)
 to `old_addr`.
+
+It optionally may contain the address of functions to be called right before
+being applied and after being reverted:
+
+ * `.livepatch.hooks.load` - an array of function pointers.
+ * `.livepatch.hooks.unload` - an array of function pointers.
+
 
 ### Example of .livepatch.funcs
 
@@ -376,6 +394,22 @@ struct livepatch_func livepatch_hello_world = {
 </pre>
 
 Code must be compiled with -fPIC.
+
+### .livepatch.hooks.load and .livepatch.hooks.unload
+
+This section contains an array of function pointers to be executed
+before payload is being applied (.livepatch.funcs) or after reverting
+the payload. This is useful to prepare data structures that need to
+be modified patching.
+
+Each entry in this array is eight bytes.
+
+The type definition of the function are as follow:
+
+<pre>
+typedef void (*livepatch_loadcall_t)(void);  
+typedef void (*livepatch_unloadcall_t)(void);   
+</pre>
 
 ### .livepatch.depends and .note.gnu.build-id
 
@@ -1061,13 +1095,20 @@ depending on the current state of data. As such it should not be attempted.
 That said we should provide hook functions so that the existing data
 can be changed during payload application.
 
+To guarantee safety we disallow re-applying an payload after it has been
+reverted. This is because we cannot guarantee that the state of .bss
+and .data to be exactly as it was during loading. Hence the administrator
+MUST unload the payload and upload it again to apply it.
+
+There is an exception to this: if the payload only has .livepatch.funcs;
+and the .data or .bss sections are of zero length.
 
 ### Inline patching
 
 The hypervisor should verify that the in-place patching would fit within
 the code or data.
 
-### Trampoline (e9 opcode)
+### Trampoline (e9 opcode), x86
 
 The e9 opcode used for jmpq uses a 32-bit signed displacement. That means
 we are limited to up to 2GB of virtual address to place the new code
@@ -1080,7 +1121,8 @@ limit that calls the next trampoline.
 Please note there is a small limitation for trampolines in
 function entries: The target function (+ trailing padding) must be able
 to accomodate the trampoline. On x86 with +-2 GB relative jumps,
-this means 5 bytes are required.
+this means 5 bytes are required which means that `old_size` **MUST** be
+at least five bytes if patching in trampoline.
 
 Depending on compiler settings, there are several functions in Xen that
 are smaller (without inter-function padding).
@@ -1101,3 +1143,18 @@ that in the hypervisor is advised.
 The tool for generating payloads currently does perform a compile-time
 check to ensure that the function to be replaced is large enough.
 
+#### Trampoline, ARM
+
+The unconditional branch instruction (for the encoding see the
+DDI 0406C.c and DDI 0487A.j Architecture Reference Manual's).
+with proper offset is used for an unconditional branch to the new code.
+This means that that `old_size` **MUST** be at least four bytes if patching
+in trampoline.
+
+The instruction offset is limited on ARM32 to +/- 32MB to displacement
+and on ARM64 to +/- 128MB displacement.
+
+The new code is placed in the 8M - 10M virtual address space while the
+Xen code is in 2M - 4M. That gives us enough space.
+
+The hypervisor also checks the displacement during loading of the payload.

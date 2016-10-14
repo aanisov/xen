@@ -29,13 +29,25 @@ struct dt_device_match {
     const char *type;
     const char *compatible;
     const bool_t not_available;
+    /*
+     * Property name to search for. We only search for the property's
+     * existence.
+     */
+    const char *prop;
     const void *data;
 };
 
-#define DT_MATCH_PATH(p)                { .path = p }
-#define DT_MATCH_TYPE(typ)              { .type = typ }
-#define DT_MATCH_COMPATIBLE(compat)     { .compatible = compat }
-#define DT_MATCH_NOT_AVAILABLE()        { .not_available = 1 }
+#define __DT_MATCH_PATH(p)              .path = p
+#define __DT_MATCH_TYPE(typ)            .type = typ
+#define __DT_MATCH_COMPATIBLE(compat)   .compatible = compat
+#define __DT_MATCH_NOT_AVAILABLE()      .not_available = 1
+#define __DT_MATCH_PROP(p)              .prop = p
+
+#define DT_MATCH_PATH(p)                { __DT_MATCH_PATH(p) }
+#define DT_MATCH_TYPE(typ)              { __DT_MATCH_TYPE(typ) }
+#define DT_MATCH_COMPATIBLE(compat)     { __DT_MATCH_COMPATIBLE(compat) }
+#define DT_MATCH_NOT_AVAILABLE()        { __DT_MATCH_NOT_AVAILABLE() }
+#define DT_MATCH_PROP(p)                { __DT_MATCH_PROP(p) }
 
 typedef u32 dt_phandle;
 

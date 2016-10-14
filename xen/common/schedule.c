@@ -947,6 +947,8 @@ long vcpu_yield(void)
     SCHED_OP(VCPU2OP(v), yield, v);
     vcpu_schedule_unlock_irq(lock, v);
 
+    SCHED_STAT_CRANK(vcpu_yield);
+
     TRACE_2D(TRC_SCHED_YIELD, current->domain->domain_id, current->vcpu_id);
     raise_softirq(SCHEDULE_SOFTIRQ);
     return 0;
@@ -1388,11 +1390,11 @@ static void schedule(void)
         return continue_running(prev);
     }
 
-    TRACE_2D(TRC_SCHED_SWITCH_INFPREV,
-             prev->domain->domain_id,
+    TRACE_3D(TRC_SCHED_SWITCH_INFPREV,
+             prev->domain->domain_id, prev->vcpu_id,
              now - prev->runstate.state_entry_time);
-    TRACE_3D(TRC_SCHED_SWITCH_INFNEXT,
-             next->domain->domain_id,
+    TRACE_4D(TRC_SCHED_SWITCH_INFNEXT,
+             next->domain->domain_id, next->vcpu_id,
              (next->runstate.state == RUNSTATE_runnable) ?
              (now - next->runstate.state_entry_time) : 0,
              next_slice.time);

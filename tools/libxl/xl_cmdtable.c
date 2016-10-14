@@ -265,6 +265,8 @@ struct cmd_spec cmd_table[] = {
       "[-d <Domain> [-w[=WEIGHT]]] [-p CPUPOOL]",
       "-d DOMAIN, --domain=DOMAIN     Domain to modify\n"
       "-w WEIGHT, --weight=WEIGHT     Weight (int)\n"
+      "-s         --schedparam        Query / modify scheduler parameters\n"
+      "-r RLIMIT, --ratelimit_us=RLIMIT Set the scheduling rate limit, in microseconds\n"
       "-p CPUPOOL, --cpupool=CPUPOOL  Restrict output to CPUPOOL"
     },
     { "sched-rtds",
@@ -405,7 +407,6 @@ struct cmd_spec cmd_table[] = {
       "[<Domain>|-a] [-w[=WEIGHT]|-c[=CAP]|-p[=COMPRESS]]",
       "  -a                             Operate on all tmem\n"
       "  -w WEIGHT                      Weight (int)\n"
-      "  -c CAP                         Cap (int)\n"
       "  -p COMPRESS                    Compress (int)",
     },
     { "tmem-shared-auth",
@@ -583,6 +584,11 @@ struct cmd_spec cmd_table[] = {
       &main_usblist, 0, 0,
       "List information about all USB controllers and devices for a domain",
       "<Domain>",
+    },
+    { "qemu-monitor-command",
+      &main_qemu_monitor_command, 0, 1,
+      "Issue a qemu monitor command to the device model of a domain",
+      "<Domain> <Command>",
     },
 };
 

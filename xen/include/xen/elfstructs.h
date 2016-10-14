@@ -103,6 +103,15 @@ typedef uint64_t	Elf64_Xword;
                       (ehdr).e_ident[EI_MAG2] == ELFMAG2 && \
                       (ehdr).e_ident[EI_MAG3] == ELFMAG3)
 
+/* e_flags */
+#define EF_ARM_EABI_MASK	0xff000000
+#define EF_ARM_EABI_UNKNOWN	0x00000000
+#define EF_ARM_EABI_VER1	0x01000000
+#define EF_ARM_EABI_VER2	0x02000000
+#define EF_ARM_EABI_VER3	0x03000000
+#define EF_ARM_EABI_VER4	0x04000000
+#define EF_ARM_EABI_VER5	0x05000000
+
 /* ELF Header */
 typedef struct elfhdr {
 	unsigned char	e_ident[EI_NIDENT]; /* ELF Identification */
@@ -177,6 +186,7 @@ typedef struct {
 #define EM_IA_64	50		/* Intel Merced */
 #define EM_X86_64	62		/* AMD x86-64 architecture */
 #define EM_VAX		75		/* DEC VAX */
+#define EM_AARCH64	183		/* ARM 64-bit */
 
 /* Version */
 #define EV_NONE		0		/* Invalid */
@@ -353,11 +363,78 @@ typedef struct {
 #define	ELF64_R_TYPE(info)	((info) & 0xFFFFFFFF)
 #define ELF64_R_INFO(s,t) 	(((s) << 32) + (u_int32_t)(t))
 
-/* x86-64 relocation types. We list only the ones Live Patch implements. */
+/*
+ * Relocation types for x86_64 and ARM 64. We list only the ones Live Patch
+ * implements.
+ */
 #define R_X86_64_NONE		0	/* No reloc */
 #define R_X86_64_64	    	1	/* Direct 64 bit  */
 #define R_X86_64_PC32		2	/* PC relative 32 bit signed */
 #define R_X86_64_PLT32		4	/* 32 bit PLT address */
+
+/*
+ * ARM32 relocation types. See
+ * http://infocenter.arm.com/help/topic/com.arm.doc.ihi0044f/IHI0044F_aaelf.pdf
+ * S - address of symbol.
+ * A - addend for relocation (r_addend or need to extract from insn)
+ * P - address of the dest being relocated (derieved from r_offset)
+ */
+#define R_ARM_NONE              0
+#define R_ARM_ABS32             2	/* Direct 32-bit. S+A */
+#define R_ARM_REL32             3	/* PC relative. S+A */
+#define R_ARM_CALL              28	/* SignExtend([23:0]) << 2. S+A-P */
+#define R_ARM_JUMP24            29	/* Same as R_ARM_CALL */
+#define R_ARM_MOVW_ABS_NC       43	/* SignExtend([19:16],[11:0])&0xFFFF, S+A */
+#define R_ARM_MOVT_ABS          44	/* SignExtend([19:16],[11:0))&0xFFFF0000 */
+					/*  >> 16, S+A. */
+
+/*
+ * NC -  No check for overflow.
+ *
+ * The defines also use _PREL for PC-relative address, and _NC is No Check.
+ */
+#define R_AARCH64_ABS64			257 /* Direct 64 bit. S+A, NC*/
+#define R_AARCH64_ABS32			258 /* Direct 32 bit. S+A */
+#define R_AARCH64_ABS16			259 /* Direct 16 bit, S+A */
+#define R_AARCH64_PREL64		260 /* S+A-P, NC */
+#define R_AARCH64_PREL32		261 /* S+A-P */
+#define R_AARCH64_PREL16		262 /* S+A-P */
+
+/* Instructions. */
+#define R_AARCH64_MOVW_UABS_G0		263
+#define R_AARCH64_MOVW_UABS_G0_NC	264
+#define R_AARCH64_MOVW_UABS_G1		265
+#define R_AARCH64_MOVW_UABS_G1_NC	266
+#define R_AARCH64_MOVW_UABS_G2		267
+#define R_AARCH64_MOVW_UABS_G2_NC	268
+#define R_AARCH64_MOVW_UABS_G3		269
+
+#define R_AARCH64_MOVW_SABS_G0		270
+#define R_AARCH64_MOVW_SABS_G1		271
+#define R_AARCH64_MOVW_SABS_G2		272
+
+#define R_AARCH64_ADR_PREL_LO21		274 /* ADR imm, [20:0]. S+A-P */
+#define R_AARCH64_ADR_PREL_PG_HI21	275 /* ADRP imm, [32:12]. Page(S+A) - Page(P).*/
+#define R_AARCH64_ADR_PREL_PG_HI21_NC	276
+#define R_AARCH64_ADD_ABS_LO12_NC	277 /* ADD imm. [11:0]. S+A, NC */
+
+#define R_AARCH64_TSTBR14		279
+#define R_AARCH64_CONDBR19		280 /* Bits 20:2, S+A-P */
+#define R_AARCH64_JUMP26		282 /* Bits 27:2, S+A-P */
+#define R_AARCH64_CALL26		283 /* Bits 27:2, S+A-P */
+#define R_AARCH64_LDST16_ABS_LO12_NC	284 /* LD/ST to bits 11:1, S+A, NC */
+#define R_AARCH64_LDST32_ABS_LO12_NC	285 /* LD/ST to bits 11:2, S+A, NC */
+#define R_AARCH64_LDST64_ABS_LO12_NC	286 /* LD/ST to bits 11:3, S+A, NC */
+#define R_AARCH64_LDST8_ABS_LO12_NC	278 /* LD/ST to bits 11:0, S+A, NC */
+#define R_AARCH64_LDST128_ABS_LO12_NC	299
+
+#define R_AARCH64_MOVW_PREL_G0		287
+#define R_AARCH64_MOVW_PREL_G0_NC	288
+#define R_AARCH64_MOVW_PREL_G1		289
+#define R_AARCH64_MOVW_PREL_G1_NC	290
+#define R_AARCH64_MOVW_PREL_G2		291
+#define R_AARCH64_MOVW_PREL_G2_NC	292
+#define R_AARCH64_MOVW_PREL_G3		293
 
 /* Program Header */
 typedef struct {

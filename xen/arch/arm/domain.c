@@ -13,6 +13,7 @@
 #include <xen/hypercall.h>
 #include <xen/init.h>
 #include <xen/lib.h>
+#include <xen/livepatch.h>
 #include <xen/sched.h>
 #include <xen/softirq.h>
 #include <xen/wait.h>
@@ -55,6 +56,11 @@ void idle_loop(void)
 
         do_tasklet();
         do_softirq();
+        /*
+         * We MUST be last (or before dsb, wfi). Otherwise after we get the
+         * softirq we would execute dsb,wfi (and sleep) and not patch.
+         */
+        check_for_livepatch_work();
     }
 }
 
@@ -548,6 +554,7 @@ int arch_domain_create(struct domain *d, unsigned int domcr_flags,
 {
     int rc, count = 0;
 
+    BUILD_BUG_ON(GUEST_MAX_VCPUS < MAX_VIRT_CPUS);
     d->arch.relmem = RELMEM_not_started;
 
     /* Idle domains do not need this setup */
@@ -555,6 +562,11 @@ int arch_domain_create(struct domain *d, unsigned int domcr_flags,
         return 0;
 
     ASSERT(config != NULL);
+
+    /* p2m_init relies on some value initialized by the IOMMU subsystem */
+    if ( (rc = iommu_domain_init(d)) != 0 )
+        goto fail;
+
     if ( (rc = p2m_init(d)) != 0 )
         goto fail;
 
@@ -635,9 +647,6 @@ int arch_domain_create(struct domain *d, unsigned int domcr_flags,
      * support multi-platform.
      */
     if ( is_hardware_domain(d) && (rc = domain_vuart_init(d)) )
-        goto fail;
-
-    if ( (rc = iommu_domain_init(d)) != 0 )
         goto fail;
 
     return 0;

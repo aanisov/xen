@@ -276,10 +276,10 @@ SEABIOS_UPSTREAM_URL ?= git://xenbits.xen.org/seabios.git
 MINIOS_UPSTREAM_URL ?= git://xenbits.xen.org/mini-os.git
 endif
 OVMF_UPSTREAM_REVISION ?= bc54e50e0fe03c570014f363b547426913e92449
-QEMU_UPSTREAM_REVISION ?= master
-MINIOS_UPSTREAM_REVISION ?= 0f6582dd71454dffba4bbb21258fea25becfdd00
-# Tue Aug 30 13:51:23 2016 +0200
-# mini-os: support "make config" for out-of-tree users
+QEMU_UPSTREAM_REVISION ?= qemu-xen-4.8.0-rc1
+MINIOS_UPSTREAM_REVISION ?= xen-4.8.0-rc1
+# Wed Sep 28 11:50:04 2016 +0200
+# minios: fix build issue with xen_*mb defines
 
 SEABIOS_UPSTREAM_REVISION ?= rel-1.9.3
 # Wed Jun 22 14:53:24 2016 +0800
@@ -288,9 +288,9 @@ SEABIOS_UPSTREAM_REVISION ?= rel-1.9.3
 ETHERBOOT_NICS ?= rtl8139 8086100e
 
 
-QEMU_TRADITIONAL_REVISION ?= 6e20809727261599e8527c456eb078c0e89139a1
-# Thu May 19 19:38:35 2016 +0100
-# main loop: Big hammer to fix logfile disk DoS in Xen setups
+QEMU_TRADITIONAL_REVISION ?= xen-4.8.0-rc1
+# Tue Jul 26 15:31:59 2016 +0100
+# virtio: error out if guest exceeds virtqueue size
 
 # Specify which qemu-dm to use. This may be `ioemu' to use the old
 # Mercurial in-tree version, or a local directory, or a git URL.

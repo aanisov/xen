@@ -222,7 +222,7 @@ AC_ARG_WITH([system-seabios],
         *)  seabios_path=$withval ;;
     esac
 ],[])
-AS_IF([test "x$seabios" = "xy"], [
+AS_IF([test "x$seabios" = "xy" -o -n "$seabios_path" ], [
     AC_DEFINE_UNQUOTED([SEABIOS_PATH],
                        ["${seabios_path:-$XENFIRMWAREDIR/seabios.bin}"],
                        [SeaBIOS path])
@@ -239,7 +239,7 @@ AC_ARG_WITH([system-ovmf],
         *)  ovmf_path=$withval ;;
     esac
 ],[])
-AS_IF([test "x$ovmf" = "xy"], [
+AS_IF([test "x$ovmf" = "xy" -o -n "$ovmf_path" ], [
     AC_DEFINE_UNQUOTED([OVMF_PATH],
                        ["${ovmf_path:-$XENFIRMWAREDIR/ovmf.bin}"],
                        [OVMF path])
@@ -340,7 +340,7 @@ dnl "host" here means the platform on which the hypervisor and tools is
 dnl going to run, not the platform on which we are building (known as
 dnl "build" in gnu speak).
 case "$host_cpu" in
-i[[3456]]86|x86_64)
+i[[3456]]86|x86_64|aarch64)
     AX_PATH_PROG_OR_FAIL([IASL], [iasl])
     ;;
 esac

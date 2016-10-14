@@ -128,6 +128,11 @@
 #define ROUNDUP(_val, _order)                                           \
     (((unsigned long)(_val)+(1UL<<(_order))-1) & ~((1UL<<(_order))-1))
 
+#define DIV_ROUNDUP(n, d) (((n) + (d) - 1) / (d))
+
+#define MASK_EXTR(v, m) (((v) & (m)) / ((m) & -(m)))
+#define MASK_INSR(v, m) (((v) * ((m) & -(m))) & (m))
+
 #define min(X, Y) ({                             \
             const typeof (X) _x = (X);           \
             const typeof (Y) _y = (Y);           \
@@ -1821,7 +1826,8 @@ _hidden int libxl__qmp_x_blockdev_change(libxl__gc *gc, int domid,
                                          const char *parant,
                                          const char *child, const char *node);
 /* run a hmp command in qmp mode */
-_hidden int libxl__qmp_hmp(libxl__gc *gc, int domid, const char *command_line);
+_hidden int libxl__qmp_hmp(libxl__gc *gc, int domid, const char *command_line,
+                           char **out);
 /* close and free the QMP handler */
 _hidden void libxl__qmp_close(libxl__qmp_handler *qmp);
 /* remove the socket file, if the file has already been removed,
@@ -4147,14 +4153,6 @@ int libxl__string_parse_json(libxl__gc *gc, const libxl__json_object *o,
 
 int libxl__random_bytes(libxl__gc *gc, uint8_t *buf, size_t len);
 
-/*
- * Compile time assertion
- */
-#if __GNUC__ > 4 || (__GNUC__ == 4 && __GNUC_MINOR__ >= 6)
-#define BUILD_BUG_ON(p) ({ _Static_assert(!(p), "!(" #p ")"); })
-#else
-#define BUILD_BUG_ON(p) ((void)sizeof(char[1 - 2 * !!(p)]))
-#endif
 #include "_libxl_types_private.h"
 #include "_libxl_types_internal_private.h"
 
@@ -4299,6 +4297,12 @@ _hidden int libxl__read_sysfs_file_contents(libxl__gc *gc,
 #define LIBXL_QEMU_USER_PREFIX "xen-qemuuser"
 #define LIBXL_QEMU_USER_BASE   LIBXL_QEMU_USER_PREFIX"-domid"
 #define LIBXL_QEMU_USER_SHARED LIBXL_QEMU_USER_PREFIX"-shared"
+
+static inline bool libxl__acpi_defbool_val(const libxl_domain_build_info *b_info)
+{
+    return libxl_defbool_val(b_info->acpi) &&
+           libxl_defbool_val(b_info->u.hvm.acpi);
+}
 #endif
 
 /*

@@ -1,6 +1,7 @@
 #include "libxl_internal.h"
 #include "libxl_arch.h"
 #include "libxl_libfdt_compat.h"
+#include "libxl_arm.h"
 
 #include <xc_dom.h>
 #include <stdbool.h>
@@ -103,6 +104,26 @@ int libxl__arch_domain_create(libxl__gc *gc, libxl_domain_config *d_config,
                               uint32_t domid)
 {
     return 0;
+}
+
+int libxl__arch_extra_memory(libxl__gc *gc,
+                             const libxl_domain_build_info *info,
+                             uint64_t *out)
+{
+    int rc = 0;
+    uint64_t size = 0;
+
+    if (libxl_defbool_val(info->acpi)) {
+        rc = libxl__get_acpi_size(gc, info, &size);
+        if (rc < 0) {
+            rc = ERROR_FAIL;
+            goto out;
+        }
+    }
+
+    *out = LIBXL_MAXMEM_CONSTANT + DIV_ROUNDUP(size, 1024);
+out:
+    return rc;
 }
 
 static struct arch_info {
@@ -284,6 +305,25 @@ static int make_chosen_node(libxl__gc *gc, void *fdt, bool ramdisk,
         if (res) return res;
     }
 
+    if (libxl_defbool_val(info->acpi)) {
+        const uint64_t acpi_base = GUEST_ACPI_BASE;
+        const char *name = GCSPRINTF("module@%"PRIx64, acpi_base);
+
+        res = fdt_begin_node(fdt, name);
+        if (res) return res;
+
+        res = fdt_property_compat(gc, fdt, 2, "xen,guest-acpi",
+                                  "multiboot,module");
+        if (res) return res;
+
+        res = fdt_property_regs(gc, fdt, ROOT_ADDRESS_CELLS, ROOT_SIZE_CELLS,
+                                1, 0, 0);
+        if (res) return res;
+
+        res = fdt_end_node(fdt);
+        if (res) return res;
+    }
+
     res = fdt_end_node(fdt);
     if (res) return res;
 
@@ -308,13 +348,7 @@ static int make_cpus_node(libxl__gc *gc, void *fdt, int nr_cpus,
     for (i = 0; i < nr_cpus; i++) {
         const char *name;
 
-        /*
-         * According to ARM CPUs bindings, the reg field should match
-         * the MPIDR's affinity bits. We will use AFF0 and AFF1 when
-         * constructing the reg value of the guest at the moment, for it
-         * is enough for the current max vcpu number.
-         */
-        mpidr_aff = (i & 0x0f) | (((i >> 4) & 0xff) << 8);
+        mpidr_aff = libxl__compute_mpdir(i);
         name = GCSPRINTF("cpu@%"PRIx64, mpidr_aff);
 
         res = fdt_begin_node(fdt, name);
@@ -885,15 +919,50 @@ int libxl__arch_domain_init_hw_description(libxl__gc *gc,
                                            libxl__domain_build_state *state,
                                            struct xc_dom_image *dom)
 {
+    int rc;
+    uint64_t val;
+
     assert(info->type == LIBXL_DOMAIN_TYPE_PV);
-    return libxl__prepare_dtb(gc, info, state, dom);
+
+    /* Set the value of domain param HVM_PARAM_CALLBACK_IRQ. */
+    val = MASK_INSR(HVM_PARAM_CALLBACK_TYPE_PPI,
+                    HVM_PARAM_CALLBACK_IRQ_TYPE_MASK);
+    /* Active-low level-sensitive  */
+    val |= MASK_INSR(HVM_PARAM_CALLBACK_TYPE_PPI_FLAG_LOW_LEVEL,
+                     HVM_PARAM_CALLBACK_TYPE_PPI_FLAG_MASK);
+    val |= GUEST_EVTCHN_PPI;
+    rc = xc_hvm_param_set(dom->xch, dom->guest_domid, HVM_PARAM_CALLBACK_IRQ,
+                          val);
+    if (rc)
+        return rc;
+
+    rc = libxl__prepare_dtb(gc, info, state, dom);
+    if (rc) goto out;
+
+    if (!libxl_defbool_val(info->acpi)) {
+        LOG(DEBUG, "Generating ACPI tables is disabled by user.");
+        rc = 0;
+        goto out;
+    }
+
+    if (strcmp(dom->guest_type, "xen-3.0-aarch64")) {
+        /* ACPI is only supported for 64-bit guest currently. */
+        LOG(ERROR, "Can not enable libxl option 'acpi' for %s", dom->guest_type);
+        rc = ERROR_FAIL;
+        goto out;
+    }
+
+    rc = libxl__prepare_acpi(gc, info, dom);
+
+out:
+    return rc;
 }
 
-static void finalise_one_memory_node(libxl__gc *gc, void *fdt,
-                                     uint64_t base, uint64_t size)
+static void finalise_one_node(libxl__gc *gc, void *fdt, const char *uname,
+                              uint64_t base, uint64_t size)
 {
     int node, res;
-    const char *name = GCSPRINTF("/memory@%"PRIx64, base);
+    const char *name = GCSPRINTF("%s@%"PRIx64, uname, base);
 
     node = fdt_path_offset(fdt, name);
     assert(node > 0);
@@ -956,7 +1025,12 @@ int libxl__arch_domain_finalise_hw_description(libxl__gc *gc,
     for (i = 0; i < GUEST_RAM_BANKS; i++) {
         const uint64_t size = (uint64_t)dom->rambank_size[i] << XC_PAGE_SHIFT;
 
-        finalise_one_memory_node(gc, fdt, bankbase[i], size);
+        finalise_one_node(gc, fdt, "/memory", bankbase[i], size);
+    }
+
+    if (dom->acpi_modules[0].data) {
+        finalise_one_node(gc, fdt, "/chosen/module", GUEST_ACPI_BASE,
+                          dom->acpi_modules[0].length);
     }
 
     debug_dump_fdt(gc, fdt);
@@ -983,6 +1057,12 @@ int libxl__arch_domain_construct_memmap(libxl__gc *gc,
                                         struct xc_dom_image *dom)
 {
     return 0;
+}
+
+void libxl__arch_domain_build_info_acpi_setdefault(
+                                        libxl_domain_build_info *b_info)
+{
+    libxl_defbool_setdefault(&b_info->acpi, false);
 }
 
 /*

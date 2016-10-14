@@ -54,6 +54,9 @@
 #define TRC_CSCHED2_LOAD_CHECK       TRC_SCHED_CLASS_EVT(CSCHED2, 16)
 #define TRC_CSCHED2_LOAD_BALANCE     TRC_SCHED_CLASS_EVT(CSCHED2, 17)
 #define TRC_CSCHED2_PICKED_CPU       TRC_SCHED_CLASS_EVT(CSCHED2, 19)
+#define TRC_CSCHED2_RUNQ_CANDIDATE   TRC_SCHED_CLASS_EVT(CSCHED2, 20)
+#define TRC_CSCHED2_SCHEDULE         TRC_SCHED_CLASS_EVT(CSCHED2, 21)
+#define TRC_CSCHED2_RATELIMIT        TRC_SCHED_CLASS_EVT(CSCHED2, 22)
 
 /*
  * WARNING: This is still in an experimental phase.  Status and work can be found at the
@@ -146,7 +149,7 @@
 /* Reset: Value below which credit will be reset. */
 #define CSCHED2_CREDIT_RESET         0
 /* Max timer: Maximum time a guest can be run for. */
-#define CSCHED2_MAX_TIMER            MILLISECS(2)
+#define CSCHED2_MAX_TIMER            CSCHED2_CREDIT_INIT
 
 
 #define CSCHED2_IDLE_CREDIT                 (-(1<<30))
@@ -180,7 +183,13 @@
  */
 #define __CSFLAG_runq_migrate_request 3
 #define CSFLAG_runq_migrate_request (1<<__CSFLAG_runq_migrate_request)
-
+/*
+ * CSFLAG_vcpu_yield: this vcpu was running, and has called vcpu_yield(). The
+ * scheduler is invoked to see if we can give the cpu to someone else, and
+ * get back to the yielding vcpu in a while.
+ */
+#define __CSFLAG_vcpu_yield 4
+#define CSFLAG_vcpu_yield (1<<__CSFLAG_vcpu_yield)
 
 static unsigned int __read_mostly opt_migrate_resist = 500;
 integer_param("sched_credit2_migrate_resist", opt_migrate_resist);
@@ -398,6 +407,7 @@ struct csched2_vcpu {
     int credit;
     s_time_t start_time; /* When we were scheduled (used for credit) */
     unsigned flags;      /* 16 bits doesn't seem to play well with clear_bit() */
+    int tickled_cpu;     /* cpu tickled for picking us up (-1 if none) */
 
     /* Individual contribution to load */
     s_time_t load_last_update;  /* Last time average was updated */
@@ -1049,6 +1059,10 @@ runq_tickle(const struct scheduler *ops, struct csched2_vcpu *new, s_time_t now)
     __cpumask_set_cpu(ipid, &rqd->tickled);
     smt_idle_mask_clear(ipid, &rqd->smt_idle);
     cpu_raise_softirq(ipid, SCHEDULE_SOFTIRQ);
+
+    if ( unlikely(new->tickled_cpu != -1) )
+        SCHED_STAT_CRANK(tickled_cpu_overwritten);
+    new->tickled_cpu = ipid;
 }
 
 /*
@@ -1276,6 +1290,7 @@ csched2_alloc_vdata(const struct scheduler *ops, struct vcpu *vc, void *dd)
         svc->credit = CSCHED2_IDLE_CREDIT;
         svc->weight = 0;
     }
+    svc->tickled_cpu = -1;
 
     SCHED_STAT_CRANK(vcpu_alloc);
 
@@ -1421,6 +1436,14 @@ csched2_vcpu_wake(const struct scheduler *ops, struct vcpu *vc)
 
 out:
     return;
+}
+
+static void
+csched2_vcpu_yield(const struct scheduler *ops, struct vcpu *v)
+{
+    struct csched2_vcpu * const svc = CSCHED2_VCPU(v);
+
+    __set_bit(__CSFLAG_vcpu_yield, &svc->flags);
 }
 
 static void
@@ -1667,6 +1690,7 @@ static void migrate(const struct scheduler *ops,
         svc->migrate_rqd = trqd;
         __set_bit(_VPF_migrating, &svc->vcpu->pause_flags);
         __set_bit(__CSFLAG_runq_migrate_request, &svc->flags);
+        cpu_raise_softirq(svc->vcpu->processor, SCHEDULE_SOFTIRQ);
         SCHED_STAT_CRANK(migrate_requested);
     }
     else
@@ -1987,29 +2011,33 @@ csched2_dom_cntl(
 static int csched2_sys_cntl(const struct scheduler *ops,
                             struct xen_sysctl_scheduler_op *sc)
 {
-    int rc = -EINVAL;
-    xen_sysctl_credit_schedule_t *params = &sc->u.sched_credit;
+    xen_sysctl_credit2_schedule_t *params = &sc->u.sched_credit2;
     struct csched2_private *prv = CSCHED2_PRIV(ops);
     unsigned long flags;
 
     switch (sc->cmd )
     {
-        case XEN_SYSCTL_SCHEDOP_putinfo:
-            if ( params->ratelimit_us &&
-                ( params->ratelimit_us > XEN_SYSCTL_SCHED_RATELIMIT_MAX ||
-                  params->ratelimit_us < XEN_SYSCTL_SCHED_RATELIMIT_MIN ))
-                return rc;
-            write_lock_irqsave(&prv->lock, flags);
-            prv->ratelimit_us = params->ratelimit_us;
-            write_unlock_irqrestore(&prv->lock, flags);
-            break;
+    case XEN_SYSCTL_SCHEDOP_putinfo:
+        if ( params->ratelimit_us &&
+             (params->ratelimit_us > XEN_SYSCTL_SCHED_RATELIMIT_MAX ||
+              params->ratelimit_us < XEN_SYSCTL_SCHED_RATELIMIT_MIN ))
+            return -EINVAL;
 
-        case XEN_SYSCTL_SCHEDOP_getinfo:
-            params->ratelimit_us = prv->ratelimit_us;
-            rc = 0;
-            break;
+        write_lock_irqsave(&prv->lock, flags);
+        if ( !prv->ratelimit_us && params->ratelimit_us )
+            printk(XENLOG_INFO "Enabling context switch rate limiting\n");
+        else if ( prv->ratelimit_us && !params->ratelimit_us )
+            printk(XENLOG_INFO "Disabling context switch rate limiting\n");
+        prv->ratelimit_us = params->ratelimit_us;
+        write_unlock_irqrestore(&prv->lock, flags);
+
+    /* FALLTHRU */
+    case XEN_SYSCTL_SCHEDOP_getinfo:
+        params->ratelimit_us = prv->ratelimit_us;
+        break;
     }
-    return rc;
+
+    return 0;
 }
 
 static void *
@@ -2232,11 +2260,45 @@ void __dump_execstate(void *unused);
 static struct csched2_vcpu *
 runq_candidate(struct csched2_runqueue_data *rqd,
                struct csched2_vcpu *scurr,
-               int cpu, s_time_t now)
+               int cpu, s_time_t now,
+               unsigned int *skipped)
 {
     struct list_head *iter;
     struct csched2_vcpu *snext = NULL;
     struct csched2_private *prv = CSCHED2_PRIV(per_cpu(scheduler, cpu));
+    bool yield = __test_and_clear_bit(__CSFLAG_vcpu_yield, &scurr->flags);
+
+    *skipped = 0;
+
+    /*
+     * Return the current vcpu if it has executed for less than ratelimit.
+     * Adjuststment for the selected vcpu's credit and decision
+     * for how long it will run will be taken in csched2_runtime.
+     *
+     * Note that, if scurr is yielding, we don't let rate limiting kick in.
+     * In fact, it may be the case that scurr is about to spin, and there's
+     * no point forcing it to do so until rate limiting expires.
+     */
+    if ( !yield && prv->ratelimit_us && !is_idle_vcpu(scurr->vcpu) &&
+         vcpu_runnable(scurr->vcpu) &&
+         (now - scurr->vcpu->runstate.state_entry_time) <
+          MICROSECS(prv->ratelimit_us) )
+    {
+        if ( unlikely(tb_init_done) )
+        {
+            struct {
+                unsigned vcpu:16, dom:16;
+                unsigned runtime;
+            } d;
+            d.dom = scurr->vcpu->domain->domain_id;
+            d.vcpu = scurr->vcpu->vcpu_id;
+            d.runtime = now - scurr->vcpu->runstate.state_entry_time;
+            __trace_var(TRC_CSCHED2_RATELIMIT, 1,
+                        sizeof(d),
+                        (unsigned char *)&d);
+        }
+        return scurr;
+    }
 
     /* Default to current if runnable, idle otherwise */
     if ( vcpu_runnable(scurr->vcpu) )
@@ -2244,43 +2306,70 @@ runq_candidate(struct csched2_runqueue_data *rqd,
     else
         snext = CSCHED2_VCPU(idle_vcpu[cpu]);
 
-    /*
-     * Return the current vcpu if it has executed for less than ratelimit.
-     * Adjuststment for the selected vcpu's credit and decision
-     * for how long it will run will be taken in csched2_runtime.
-     */
-    if ( prv->ratelimit_us && !is_idle_vcpu(scurr->vcpu) &&
-         vcpu_runnable(scurr->vcpu) &&
-         (now - scurr->vcpu->runstate.state_entry_time) <
-          MICROSECS(prv->ratelimit_us) )
-        return scurr;
-
     list_for_each( iter, &rqd->runq )
     {
         struct csched2_vcpu * svc = list_entry(iter, struct csched2_vcpu, runq_elem);
 
         /* Only consider vcpus that are allowed to run on this processor. */
         if ( !cpumask_test_cpu(cpu, svc->vcpu->cpu_hard_affinity) )
+        {
+            (*skipped)++;
             continue;
+        }
 
-        /* If this is on a different processor, don't pull it unless
-         * its credit is at least CSCHED2_MIGRATE_RESIST higher. */
+        /*
+         * If a vcpu is meant to be picked up by another processor, and such
+         * processor has not scheduled yet, leave it in the runqueue for him.
+         */
+        if ( svc->tickled_cpu != -1 && svc->tickled_cpu != cpu &&
+             cpumask_test_cpu(svc->tickled_cpu, &rqd->tickled) )
+        {
+            (*skipped)++;
+            SCHED_STAT_CRANK(deferred_to_tickled_cpu);
+            continue;
+        }
+
+        /*
+         * If this is on a different processor, don't pull it unless
+         * its credit is at least CSCHED2_MIGRATE_RESIST higher.
+         */
         if ( svc->vcpu->processor != cpu
              && snext->credit + CSCHED2_MIGRATE_RESIST > svc->credit )
         {
+            (*skipped)++;
             SCHED_STAT_CRANK(migrate_resisted);
             continue;
         }
 
-        /* If the next one on the list has more credit than current
-         * (or idle, if current is not runnable), choose it. */
-        if ( svc->credit > snext->credit )
+        /*
+         * If the next one on the list has more credit than current
+         * (or idle, if current is not runnable), or if current is
+         * yielding, choose it.
+         */
+        if ( yield || svc->credit > snext->credit )
             snext = svc;
 
         /* In any case, if we got this far, break. */
         break;
-
     }
+
+    if ( unlikely(tb_init_done) )
+    {
+        struct {
+            unsigned vcpu:16, dom:16;
+            unsigned tickled_cpu, skipped;
+        } d;
+        d.dom = snext->vcpu->domain->domain_id;
+        d.vcpu = snext->vcpu->vcpu_id;
+        d.tickled_cpu = snext->tickled_cpu;
+        d.skipped = *skipped;
+        __trace_var(TRC_CSCHED2_RUNQ_CANDIDATE, 1,
+                    sizeof(d),
+                    (unsigned char *)&d);
+    }
+
+    if ( unlikely(snext->tickled_cpu != -1 && snext->tickled_cpu != cpu) )
+        SCHED_STAT_CRANK(tickled_cpu_overridden);
 
     return snext;
 }
@@ -2297,7 +2386,9 @@ csched2_schedule(
     struct csched2_runqueue_data *rqd;
     struct csched2_vcpu * const scurr = CSCHED2_VCPU(current);
     struct csched2_vcpu *snext = NULL;
+    unsigned int skipped_vcpus = 0;
     struct task_slice ret;
+    bool_t tickled;
 
     SCHED_STAT_CRANK(schedule);
     CSCHED2_VCPU_CHECK(current);
@@ -2312,11 +2403,29 @@ csched2_schedule(
     BUG_ON(!is_idle_vcpu(scurr->vcpu) && scurr->rqd != rqd);
 
     /* Clear "tickled" bit now that we've been scheduled */
-    if ( cpumask_test_cpu(cpu, &rqd->tickled) )
+    tickled = cpumask_test_cpu(cpu, &rqd->tickled);
+    if ( tickled )
     {
         __cpumask_clear_cpu(cpu, &rqd->tickled);
         cpumask_andnot(cpumask_scratch, &rqd->idle, &rqd->tickled);
         smt_idle_mask_set(cpu, cpumask_scratch, &rqd->smt_idle);
+    }
+
+    if ( unlikely(tb_init_done) )
+    {
+        struct {
+            unsigned cpu:16, rq_id:16;
+            unsigned tasklet:8, idle:8, smt_idle:8, tickled:8;
+        } d;
+        d.cpu = cpu;
+        d.rq_id = c2r(ops, cpu);
+        d.tasklet = tasklet_work_scheduled;
+        d.idle = is_idle_vcpu(current);
+        d.smt_idle = cpumask_test_cpu(cpu, &rqd->smt_idle);
+        d.tickled = tickled;
+        __trace_var(TRC_CSCHED2_SCHEDULE, 1,
+                    sizeof(d),
+                    (unsigned char *)&d);
     }
 
     /* Update credits */
@@ -2342,11 +2451,12 @@ csched2_schedule(
      */
     if ( tasklet_work_scheduled )
     {
-        trace_var(TRC_CSCHED2_SCHED_TASKLET, 1, 0,  NULL);
+        __clear_bit(__CSFLAG_vcpu_yield, &scurr->flags);
+        trace_var(TRC_CSCHED2_SCHED_TASKLET, 1, 0, NULL);
         snext = CSCHED2_VCPU(idle_vcpu[cpu]);
     }
     else
-        snext=runq_candidate(rqd, scurr, cpu, now);
+        snext = runq_candidate(rqd, scurr, cpu, now, &skipped_vcpus);
 
     /* If switching from a non-idle runnable vcpu, put it
      * back on the runqueue. */
@@ -2370,8 +2480,21 @@ csched2_schedule(
             __set_bit(__CSFLAG_scheduled, &snext->flags);
         }
 
-        /* Check for the reset condition */
-        if ( snext->credit <= CSCHED2_CREDIT_RESET )
+        /*
+         * The reset condition is "has a scheduler epoch come to an end?".
+         * The way this is enforced is checking whether the vcpu at the top
+         * of the runqueue has negative credits. This means the epochs have
+         * variable lenght, as in one epoch expores when:
+         *  1) the vcpu at the top of the runqueue has executed for
+         *     around 10 ms (with default parameters);
+         *  2) no other vcpu with higher credits wants to run.
+         *
+         * Here, where we want to check for reset, we need to make sure the
+         * proper vcpu is being used. In fact, runqueue_candidate() may have
+         * not returned the first vcpu in the runqueue, for various reasons
+         * (e.g., affinity). Only trigger a reset when it does.
+         */
+        if ( skipped_vcpus == 0 && snext->credit <= CSCHED2_CREDIT_RESET )
         {
             reset_credit(ops, cpu, now, snext);
             balance_load(ops, cpu, now);
@@ -2385,6 +2508,7 @@ csched2_schedule(
         }
 
         snext->start_time = now;
+        snext->tickled_cpu = -1;
 
         /* Safe because lock for old processor is held */
         if ( snext->vcpu->processor != cpu )
@@ -2912,6 +3036,7 @@ static const struct scheduler sched_credit2_def = {
 
     .sleep          = csched2_vcpu_sleep,
     .wake           = csched2_vcpu_wake,
+    .yield          = csched2_vcpu_yield,
 
     .adjust         = csched2_dom_cntl,
     .adjust_global  = csched2_sys_cntl,
