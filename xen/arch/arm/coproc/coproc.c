@@ -15,13 +15,20 @@
 #include <xen/init.h>
 #include <xen/sched.h>
 #include <xen/list.h>
+#include <xen/err.h>
 #include <asm/device.h>
 
 #include "coproc.h"
 
+/* dom0_coprocs: comma-separated list of coprocs for domain 0. */
+static char __initdata opt_dom0_coprocs[128] = "";
+string_param("dom0_coprocs", opt_dom0_coprocs);
+
 static DEFINE_SPINLOCK(coproc_devices_lock);
 static LIST_HEAD(coproc_devices);
 static int num_coprocs_devices;
+
+#define dev_path(dev) dt_node_full_name(dev_to_dt(dev))
 
 int vcoproc_context_switch(struct vcoproc_info *prev, struct vcoproc_info *next)
 {
@@ -33,19 +40,14 @@ int vcoproc_context_switch(struct vcoproc_info *prev, struct vcoproc_info *next)
 
     coproc = next ? next->coproc : prev->coproc;
 
-    if ( coproc->ops && coproc->ops->ctx_switch_from )
-    {
-        ret = coproc->ops->ctx_switch_from(prev);
-        if ( ret )
-            return ret;
-    }
+    ret = coproc->ops->ctx_switch_from(prev);
+    if ( ret )
+        return ret;
 
-    if ( coproc->ops && coproc->ops->ctx_switch_to )
-    {
-        ret = coproc->ops->ctx_switch_to(next);
-        if ( ret )
-            panic("Could not switch context to coproc %s\n", coproc->name);
-    }
+    ret = coproc->ops->ctx_switch_to(next);
+    if ( ret )
+        panic("Failed to switch context to coproc \"%s\" (%d)\n",
+              dev_path(coproc->dev), ret);
 
     return ret;
 }
@@ -70,100 +72,27 @@ int vcoproc_attach(struct domain *d, struct vcoproc_info *info)
     instance->info = info;
     vcoproc->num_instances++;
 
-    printk("Attached vcoproc %s to domain %d\n", info->coproc->name, d->domain_id);
+    printk("Attached vcoproc \"%s\" to dom%u\n",
+           dev_path(info->coproc->dev), d->domain_id);
 
     return 0;
 }
 
-static int vcoproc_preinit(struct domain *d)
+static struct coproc_device *find_coproc_by_path(const char *path)
 {
-    struct vcoproc *vcoproc = &d->arch.vcoproc;
     struct coproc_device *coproc;
+    bool_t found = false;
+
+    if ( !path )
+        return NULL;
 
     if ( !num_coprocs_devices )
-    {
-        printk("There is no registered coprocs for creating vcoproc\n");
-        return -ENODEV;
-    }
-
-    vcoproc->instances = xzalloc_array(struct vcoproc_instance, num_coprocs_devices);
-    if ( !vcoproc->instances )
-        return -ENOMEM;
-    spin_lock_init(&vcoproc->lock);
-
-    /* For the moment, we'll create vcoproc for each registered coproc */
-    spin_lock(&coproc_devices_lock);
-    list_for_each_entry(coproc, &coproc_devices, list)
-    {
-        if ( coproc->ops && coproc->ops->vcoproc_init )
-            coproc->ops->vcoproc_init(d, coproc);
-    }
-    spin_unlock(&coproc_devices_lock);
-
-    return 0;
-}
-
-int domain_vcoproc_init(struct domain *d)
-{
-    struct vcoproc *vcoproc = &d->arch.vcoproc;
-    struct vcoproc_info *info;
-    int i, ret;
-
-    vcoproc->num_instances = 0;
-
-    ret = vcoproc_preinit(d);
-    if ( ret )
-        return ret;
-
-    BUG_ON(!vcoproc->num_instances);
-
-    for ( i = 0; i < vcoproc->num_instances; ++i )
-    {
-        info = vcoproc->instances[i].info;
-        if ( info->ops && info->ops->domain_init )
-        {
-            ret = info->ops->domain_init(d, info);
-            if ( ret )
-                return ret;
-        }
-    }
-
-    return 0;
-}
-
-void domain_vcoproc_free(struct domain *d)
-{
-    struct vcoproc *vcoproc = &d->arch.vcoproc;
-    struct vcoproc_info *info;
-    struct coproc_device *coproc;
-    int i;
-
-    for ( i = 0; i < vcoproc->num_instances; ++i )
-    {
-        info = vcoproc->instances[i].info;
-        if ( info->ops && info->ops->domain_free )
-            info->ops->domain_free(d, info);
-        coproc = info->coproc;
-        if ( coproc->ops && coproc->ops->vcoproc_free )
-            coproc->ops->vcoproc_free(d, info);
-    }
-
-    vcoproc->num_instances = 0;
-    xfree(vcoproc->instances);
-}
-
-static const struct coproc_device *find_coproc_by_name(const char *name)
-{
-    struct coproc_device *coproc;
-    bool found = false;
-
-    if ( !name )
         return NULL;
 
     spin_lock(&coproc_devices_lock);
     list_for_each_entry(coproc, &coproc_devices, list)
     {
-        if ( !strcmp(coproc->name, name) )
+        if ( !strcmp(dev_path(coproc->dev), path) )
         {
             found = true;
             break;
@@ -171,7 +100,194 @@ static const struct coproc_device *find_coproc_by_name(const char *name)
     }
     spin_unlock(&coproc_devices_lock);
 
-    return (found) ? coproc : NULL;
+    return found ? coproc : NULL;
+}
+
+static int coproc_attach_to_domain(struct domain *d, struct coproc_device *coproc)
+{
+    struct vcoproc_info *info;
+    int ret;
+
+    if ( !coproc )
+        return -EINVAL;
+
+    if ( coproc->ops->vcoproc_is_created(d, coproc) )
+        return -EEXIST;
+
+    info = coproc->ops->vcoproc_init(d, coproc);
+    if ( IS_ERR(info) )
+        return PTR_ERR(info);
+
+    ret = info->ops->domain_init(d, info);
+    if ( ret )
+        coproc->ops->vcoproc_free(d, info);
+
+    return ret;
+}
+
+static int coproc_find_and_attach_to_domain(struct domain *d, const char *path)
+{
+    struct coproc_device *coproc;
+    int ret;
+
+    coproc = find_coproc_by_path(path);
+    if ( !coproc )
+        return -ENODEV;
+
+    spin_lock(&coproc_devices_lock);
+    ret = coproc_attach_to_domain(d, coproc);
+    spin_unlock(&coproc_devices_lock);
+
+    return ret;
+}
+
+static void coproc_detach_from_domain(struct domain *d, struct vcoproc_info *info)
+{
+    struct coproc_device *coproc = info->coproc;
+
+    if ( !info )
+        return;
+
+    info->ops->domain_free(d, info);
+    coproc->ops->vcoproc_free(d, info);
+}
+
+bool_t coproc_is_attached_to_domain(struct domain *d, const char *path)
+{
+    struct vcoproc *vcoproc = &d->arch.vcoproc;
+    struct coproc_device *coproc;
+    struct vcoproc_info *info;
+    bool_t found = false;
+    int i;
+
+    coproc = find_coproc_by_path(path);
+    if ( !coproc )
+        return false;
+
+    for ( i = 0; i < vcoproc->num_instances; ++i )
+    {
+        info = vcoproc->instances[i].info;
+        if ( info->coproc == coproc )
+        {
+            found = true;
+            break;
+        }
+    }
+
+    return found;
+}
+
+static int dom0_vcoproc_init(struct domain *d)
+{
+    const char *curr, *next;
+    int len, ret = 0;
+
+    if ( !strcmp(opt_dom0_coprocs, "") )
+        return 0;
+
+    printk("Got list of coprocs \"%s\" for dom%u\n",
+           opt_dom0_coprocs, d->domain_id);
+
+    /*
+     * For the moment, we'll create vcoproc for each registered coproc
+     * which is described in the list of coprocs for domain 0 in bootargs.
+     */
+    for ( curr = opt_dom0_coprocs; curr; curr = next )
+    {
+        struct dt_device_node *node = NULL;
+        char *buf;
+        bool_t is_alias = false;
+
+        next = strchr(curr, ',');
+        if ( next )
+        {
+            len = next - curr;
+            next++;
+        }
+        else
+            len = strlen(curr);
+
+        if ( *curr != '/' )
+            is_alias = true;
+
+        buf = xmalloc_array(char, len + 1);
+        if ( !buf )
+        {
+            ret = -ENOMEM;
+            break;
+        }
+
+        strlcpy(buf, curr, len + 1);
+        if ( is_alias )
+            node = dt_find_node_by_alias(buf);
+        else
+            node = dt_find_node_by_path(buf);
+        if ( !node )
+        {
+            printk("Unable to find node by %s \"%s\"\n",
+                   is_alias ? "alias" : "path", buf);
+            ret = -EINVAL;
+        }
+        xfree(buf);
+        if ( ret )
+            break;
+
+        curr = dt_node_full_name(node);
+
+        ret = coproc_find_and_attach_to_domain(d, curr);
+        if (ret)
+        {
+            printk("Failed to attach coproc \"%s\" to dom%u (%d)\n",
+                   curr, d->domain_id, ret);
+            break;
+        }
+    }
+
+    return ret;
+}
+
+int domain_vcoproc_init(struct domain *d)
+{
+    struct vcoproc *vcoproc = &d->arch.vcoproc;
+    int ret = 0;
+
+    vcoproc->num_instances = 0;
+
+    /*
+     * We haven't known yet if the domain are going to use coprocs.
+     * So, just return okay for the moment.
+     */
+    if ( !num_coprocs_devices )
+        return 0;
+
+    vcoproc->instances = xzalloc_array(struct vcoproc_instance, num_coprocs_devices);
+    if ( !vcoproc->instances )
+        return -ENOMEM;
+    spin_lock_init(&vcoproc->lock);
+
+    /* We already have the list of coprocs for domain 0. */
+    if ( d->domain_id == 0 )
+        ret = dom0_vcoproc_init(d);
+
+    return ret;
+}
+
+void domain_vcoproc_free(struct domain *d)
+{
+    struct vcoproc *vcoproc = &d->arch.vcoproc;
+    struct vcoproc_info *info;
+    int i;
+
+    spin_lock(&coproc_devices_lock);
+    for ( i = 0; i < vcoproc->num_instances; ++i )
+    {
+        info = vcoproc->instances[i].info;
+        coproc_detach_from_domain(d, info);
+    }
+    spin_unlock(&coproc_devices_lock);
+
+    vcoproc->num_instances = 0;
+    xfree(vcoproc->instances);
 }
 
 int __init coproc_register(struct coproc_device *coproc)
@@ -179,16 +295,16 @@ int __init coproc_register(struct coproc_device *coproc)
     if ( !coproc )
         return -EINVAL;
 
-    if ( find_coproc_by_name(coproc->name) )
+    if ( find_coproc_by_path(dev_path(coproc->dev)) )
         return -EEXIST;
 
     spin_lock(&coproc_devices_lock);
-    list_add(&coproc->list, &coproc_devices);
+    list_add_tail(&coproc->list, &coproc_devices);
     spin_unlock(&coproc_devices_lock);
 
     num_coprocs_devices++;
 
-    printk("Registered new coproc %s\n", coproc->name);
+    printk("Registered new coproc \"%s\"\n", dev_path(coproc->dev));
 
     return 0;
 }
@@ -199,9 +315,15 @@ void __init coproc_init(void)
     unsigned int num_coprocs = 0;
     int ret;
 
-    /* For the moment, we'll create coproc for each device that presents in device tree */
+    /*
+     * For the moment, we'll create coproc for each device that presents
+     * in the device tree and has "xen,coproc" property.
+     */
     dt_for_each_device_node(dt_host, node)
     {
+        if ( !dt_get_property(node, "xen,coproc", NULL) )
+            continue;
+
         ret = device_init(node, DEVICE_COPROC, NULL);
         if ( !ret )
             num_coprocs++;

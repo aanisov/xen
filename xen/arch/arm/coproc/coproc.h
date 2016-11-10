@@ -21,10 +21,10 @@ struct mmio {
     void __iomem *base;
     u64 addr;
     u64 size;
+    struct coproc_device *coproc;
 };
 
 struct coproc_device {
-    char *name;
     struct device *dev;
 
     u32 num_mmios;
@@ -58,8 +58,9 @@ struct vcoproc_info {
 };
 
 struct vcoproc_ops {
-    int (*vcoproc_init)(struct domain *, struct coproc_device *);
+    struct vcoproc_info *(*vcoproc_init)(struct domain *, struct coproc_device *);
     void (*vcoproc_free)(struct domain *, struct vcoproc_info *);
+    bool_t (*vcoproc_is_created)(struct domain *, struct coproc_device *);
     int (*ctx_switch_from)(struct vcoproc_info *);
     int (*ctx_switch_to)(struct vcoproc_info *);
 };
@@ -113,6 +114,7 @@ int coproc_register(struct coproc_device *);
 int vcoproc_attach(struct domain *, struct vcoproc_info *);
 int domain_vcoproc_init(struct domain *);
 void domain_vcoproc_free(struct domain *);
+bool_t coproc_is_attached_to_domain(struct domain *, const char *);
 
 int vcoproc_context_switch(struct vcoproc_info *, struct vcoproc_info *);
 void vcoproc_continue_running(struct vcoproc_info *);

@@ -29,20 +29,28 @@
 
 static int vcoproc_xxx_read(struct vcpu *v, mmio_info_t *info, register_t *r, void *priv)
 {
-	struct vcoproc_info *vcoproc_xxx = priv;
+	struct mmio *mmio = priv;
+	struct coproc_device *coproc_xxx = mmio->coproc;
+	struct hsr_dabt dabt = info->dabt;
+	uint32_t offset = info->gpa - mmio->addr;
 
-	(void)vcoproc_xxx;
+	dev_dbg(coproc_xxx->dev, "read r%d=%"PRIregister" offset %#08x base %#08x\n",
+			dabt.reg, *r, offset, (uint32_t)mmio->addr);
 
-	return 0;
+	return 1;
 }
 
 static int vcoproc_xxx_write(struct vcpu *v, mmio_info_t *info, register_t r, void *priv)
 {
-	struct vcoproc_info *vcoproc_xxx = priv;
+	struct mmio *mmio = priv;
+	struct coproc_device *coproc_xxx = mmio->coproc;
+	struct hsr_dabt dabt = info->dabt;
+	uint32_t offset = info->gpa - mmio->addr;
 
-	(void)vcoproc_xxx;
+	dev_dbg(coproc_xxx->dev, "write r%d=%"PRIregister" offset %#08x base %#08x\n",
+			dabt.reg, r, offset, (uint32_t)mmio->addr);
 
-	return 0;
+	return 1;
 }
 
 static const struct mmio_handler_ops vcoproc_xxx_mmio_handler = {
@@ -50,17 +58,21 @@ static const struct mmio_handler_ops vcoproc_xxx_mmio_handler = {
 	.write = vcoproc_xxx_write,
 };
 
-
 static int vcoproc_xxx_domain_init(struct domain *d, struct vcoproc_info *vcoproc_xxx)
 {
 	struct coproc_device *coproc_xxx = vcoproc_xxx->coproc;
-	int i;
+	int i, ret;
 
 	for (i = 0; i < coproc_xxx->num_mmios; i++) {
 		struct mmio *mmio = &coproc_xxx->mmios[i];
 
-		register_mmio_handler(d, &vcoproc_xxx_mmio_handler,
-				mmio->addr, mmio->size, vcoproc_xxx);
+		register_mmio_handler(d, &vcoproc_xxx_mmio_handler, mmio->addr, mmio->size, mmio);
+	}
+
+	ret = vcoproc_attach(d, vcoproc_xxx);
+	if (ret) {
+		dev_err(coproc_xxx->dev, "failed to attach vcoproc to domain %d\n", d->domain_id);
+		return ret;
 	}
 
 	return 0;
@@ -86,15 +98,14 @@ static int vcoproc_xxx_ctx_switch_to(struct vcoproc_info *next)
 	return 0;
 }
 
-static int vcoproc_xxx_vcoproc_init(struct domain *d, struct coproc_device *coproc_xxx)
+static struct vcoproc_info *vcoproc_xxx_vcoproc_init(struct domain *d, struct coproc_device *coproc_xxx)
 {
 	struct vcoproc_info *vcoproc_xxx;
-	int ret;
 
 	vcoproc_xxx = xzalloc(struct vcoproc_info);
 	if (!vcoproc_xxx) {
 		dev_err(coproc_xxx->dev, "failed to allocate vcoproc_info\n");
-		return -ENOMEM;
+		return ERR_PTR(-ENOMEM);
 	}
 
 	vcoproc_xxx->coproc = coproc_xxx;
@@ -106,13 +117,7 @@ static int vcoproc_xxx_vcoproc_init(struct domain *d, struct coproc_device *copr
 	list_add(&vcoproc_xxx->list, &coproc_xxx->vcoprocs_list);
 	spin_unlock(&coproc_xxx->vcoprocs_lock);
 
-	ret = vcoproc_attach(d, vcoproc_xxx);
-	if (ret) {
-		dev_err(coproc_xxx->dev, "failed to attach vcoproc to domain %d\n", d->domain_id);
-		return ret;
-	}
-
-	return 0;
+	return vcoproc_xxx;
 }
 
 static void vcoproc_xxx_vcoproc_free(struct domain *d, struct vcoproc_info *vcoproc_xxx)
@@ -125,9 +130,37 @@ static void vcoproc_xxx_vcoproc_free(struct domain *d, struct vcoproc_info *vcop
 	xfree(vcoproc_xxx);
 }
 
+static bool_t vcoproc_xxx_vcoproc_is_created(struct domain *d, struct coproc_device *coproc_xxx)
+{
+	struct vcoproc_info *vcoproc_xxx;
+	bool_t created = false;
+
+	spin_lock(&coproc_xxx->vcoprocs_lock);
+
+	if (list_empty(&coproc_xxx->vcoprocs_list))
+		goto out;
+
+	/*
+	 * Loop through the &coproc->vcoprocs_list to locate a vcoproc
+	 * created from coproc for this domain.
+	 */
+	list_for_each_entry(vcoproc_xxx, &coproc_xxx->vcoprocs_list, list) {
+		if (vcoproc_xxx->domain == d) {
+			created = true;
+			break;
+		}
+	}
+
+out:
+	spin_unlock(&coproc_xxx->vcoprocs_lock);
+
+	return created;
+}
+
 static const struct vcoproc_ops vcoproc_xxx_vcoproc_ops = {
 	.vcoproc_init = vcoproc_xxx_vcoproc_init,
 	.vcoproc_free = vcoproc_xxx_vcoproc_free,
+	.vcoproc_is_created = vcoproc_xxx_vcoproc_is_created,
 	.ctx_switch_from = vcoproc_xxx_ctx_switch_from,
 	.ctx_switch_to = vcoproc_xxx_ctx_switch_to,
 };
@@ -177,8 +210,10 @@ static int coproc_xxx_dt_probe(struct platform_device *pdev)
 			ret = PTR_ERR(coproc_xxx->mmios[i].base);
 			goto out_iounmap_mmios;
 		}
+
 		coproc_xxx->mmios[i].size = resource_size(res);
 		coproc_xxx->mmios[i].addr = resource_addr(res);
+		coproc_xxx->mmios[i].coproc = coproc_xxx;
 	}
 	coproc_xxx->num_mmios = num_mmios;
 
@@ -223,7 +258,6 @@ static int coproc_xxx_dt_probe(struct platform_device *pdev)
 		}
 	}
 
-	INIT_LIST_HEAD(&coproc_xxx->list);
 	INIT_LIST_HEAD(&coproc_xxx->vcoprocs_list);
 	spin_lock_init(&coproc_xxx->vcoprocs_lock);
 	coproc_xxx->ops = &vcoproc_xxx_vcoproc_ops;
