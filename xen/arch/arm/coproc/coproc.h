@@ -114,6 +114,7 @@ int coproc_register(struct coproc_device *);
 int vcoproc_attach(struct domain *, struct vcoproc_info *);
 int domain_vcoproc_init(struct domain *);
 void domain_vcoproc_free(struct domain *);
+int coproc_do_domctl(struct xen_domctl *, struct domain *, XEN_GUEST_HANDLE_PARAM(xen_domctl_t));
 bool_t coproc_is_attached_to_domain(struct domain *, const char *);
 
 int vcoproc_context_switch(struct vcoproc_info *, struct vcoproc_info *);
