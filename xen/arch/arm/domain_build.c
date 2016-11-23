@@ -25,6 +25,7 @@
 #include <xen/irq.h>
 #include <xen/grant_table.h>
 #include "kernel.h"
+#include "coproc/coproc.h"
 
 static unsigned int __initdata opt_dom0_max_vcpus;
 integer_param("dom0_max_vcpus", opt_dom0_max_vcpus);
@@ -923,6 +924,44 @@ static int make_timer_node(const struct domain *d, void *fdt,
     return res;
 }
 
+#ifdef CONFIG_HAS_COPROC
+static int make_coproc_node(const struct domain *d, void *fdt,
+                            const struct dt_device_node *node)
+{
+    const struct dt_property *prop;
+    const char *name, *path;
+    int res = 0;
+
+    dt_dprintk("Create coproc node\n");
+
+    path = dt_node_full_name(node);
+    name = strrchr(path, '/');
+    name = name ? name + 1 : path;
+
+    res = fdt_begin_node(fdt, name);
+    if ( res )
+        return res;
+
+    dt_for_each_property_node (node, prop)
+    {
+        const void *prop_data = prop->value;
+        u32 prop_len = prop->length;
+
+        /* Don't expose the property "xen,coproc" to the guest */
+        if ( dt_property_name_is_equal(prop, "xen,coproc") )
+            continue;
+
+        res = fdt_property(fdt, prop->name, prop_data, prop_len);
+        if ( res )
+            return res;
+    }
+
+    res = fdt_end_node(fdt);
+
+    return res;
+}
+#endif
+
 static int map_irq_to_domain(struct domain *d, unsigned int irq,
                              bool_t need_mapping, const char *devname)
 
@@ -1237,6 +1276,19 @@ static int handle_node(struct domain *d, struct kernel_info *kinfo,
         return make_gic_node(d, kinfo->fdt, node);
     if ( dt_match_node(timer_matches, node) )
         return make_timer_node(d, kinfo->fdt, node);
+
+#ifdef CONFIG_HAS_COPROC
+    if ( device_get_class(node) == DEVICE_COPROC )
+    {
+        if ( coproc_is_attached_to_domain(d, path) )
+            return make_coproc_node(d, kinfo->fdt, node);
+        else
+        {
+            dt_dprintk("  Skip it (won't be used in domain)\n");
+            return 0;
+        }
+    }
+#endif
 
     /* Skip nodes used by Xen */
     if ( dt_device_used_by(node) == DOMID_XEN )
