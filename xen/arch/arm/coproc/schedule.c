@@ -21,10 +21,13 @@
 static s_time_t coproc_wait_time = MILLISECS(500);
 
 /* TODO Each coproc may have its own algorithm */
-static char __initdata opt_vcoproc_sched[10] = "";
+static char __initdata opt_vcoproc_sched[10] = "rrobin";
 string_param("vcoproc_sched", opt_vcoproc_sched);
 
+extern struct vcoproc_scheduler vcoproc_sched_rrobin_def;
+
 static struct vcoproc_scheduler *const vcoproc_schedulers[] = {
+	&vcoproc_sched_rrobin_def,
 	NULL
 };
 
