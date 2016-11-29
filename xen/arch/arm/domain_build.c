@@ -1102,6 +1102,60 @@ static int map_device_children(struct domain *d,
     return 0;
 }
 
+#ifdef CONFIG_HAS_COPROC
+/* Just give permission to the guest to manage coproc IRQs for now */
+static int handle_coproc_node(struct domain *d, struct dt_device_node *dev)
+{
+    unsigned int nirq, i;
+    struct dt_raw_irq rirq;
+    int res;
+
+    dt_dprintk("Handle coproc node\n");
+
+    nirq = dt_number_of_irq(dev);
+
+    for ( i = 0; i < nirq; i++ )
+    {
+        res = dt_device_get_raw_irq(dev, i, &rirq);
+        if ( res )
+        {
+            printk(XENLOG_ERR "Unable to retrieve irq %u for %s\n",
+                   i, dt_node_full_name(dev));
+            return res;
+        }
+
+        /*
+         * Don't map IRQ that have no physical meaning
+         * ie: IRQ whose controller is not the GIC
+         */
+        if ( rirq.controller != dt_interrupt_controller )
+        {
+            dt_dprintk("irq %u not connected to primary controller. Connected to %s\n",
+                      i, dt_node_full_name(rirq.controller));
+            continue;
+        }
+
+        res = platform_get_irq(dev, i);
+        if ( res < 0 )
+        {
+            printk(XENLOG_ERR "Unable to get irq %u for %s\n",
+                   i, dt_node_full_name(dev));
+            return res;
+        }
+
+        res = irq_permit_access(d, res);
+        if ( res )
+        {
+            printk(XENLOG_ERR "Unable to permit to dom%u access to IRQ %u\n",
+                   d->domain_id, res);
+            return res;
+        }
+    }
+
+    return 0;
+}
+#endif
+
 /*
  * For a given device node:
  *  - Give permission to the guest to manage IRQ and MMIO range
@@ -1280,6 +1334,10 @@ static int handle_node(struct domain *d, struct kernel_info *kinfo,
 #ifdef CONFIG_HAS_COPROC
     if ( device_get_class(node) == DEVICE_COPROC )
     {
+        res = handle_coproc_node(d, node);
+        if ( res)
+            return res;
+
         if ( coproc_is_attached_to_domain(d, path) )
             return make_coproc_node(d, kinfo->fdt, node);
         else
