@@ -21,6 +21,9 @@
 
 /* TODO Some common code from here might be moved to framework */
 
+/* the amount of time to wait for the particular coproc */
+static s_time_t coproc_wait_time = MILLISECS(500);
+
 #define DT_MATCH_COPROC_XXX DT_MATCH_COMPATIBLE("vendor_xxx,coproc_xxx")
 
 static struct vcoproc_instance *coproc_xxx_get_vcoproc(struct domain *d, struct coproc_device *coproc_xxx)
@@ -85,16 +88,18 @@ static const struct mmio_handler_ops vcoproc_xxx_mmio_handler = {
 	.write = vcoproc_xxx_write,
 };
 
-static int vcoproc_xxx_ctx_switch_from(struct vcoproc_instance *curr)
+s_time_t vcoproc_xxx_ctx_switch_from(struct vcoproc_instance *curr)
 {
-	int ret = NOW() & 1; /* random for now */
+	s_time_t wait_time;
 
 	if (!curr)
 		return 0;
 
-	ASSERT(curr->state == VCOPROC_RUNNING || curr->state == VCOPROC_TERMINATING);
+	ASSERT(curr->state == VCOPROC_RUNNING || curr->state == VCOPROC_ASKED_TO_SLEEP);
 
-	if (!ret)
+	wait_time = NOW() & 1 ? coproc_wait_time : 0; /* random for now */
+
+	if ( wait_time == 0 )
 	{
 		if (curr->state == VCOPROC_RUNNING)
 			curr->state = VCOPROC_WAITING;
@@ -102,7 +107,7 @@ static int vcoproc_xxx_ctx_switch_from(struct vcoproc_instance *curr)
 			curr->state = VCOPROC_SLEEPING;
 	}
 
-	return ret;
+	return wait_time;
 }
 
 static int vcoproc_xxx_ctx_switch_to(struct vcoproc_instance *next)
@@ -145,7 +150,7 @@ static struct vcoproc_instance *vcoproc_xxx_vcoproc_init(struct domain *d, struc
 	return vcoproc_xxx;
 }
 
-static void vcoproc_xxx_vcoproc_free(struct domain *d, struct vcoproc_instance *vcoproc_xxx)
+static void vcoproc_xxx_vcoproc_deinit(struct domain *d, struct vcoproc_instance *vcoproc_xxx)
 {
 	struct coproc_device *coproc_xxx;
 
@@ -166,7 +171,7 @@ static bool_t coproc_xxx_vcoproc_is_created(struct domain *d, struct coproc_devi
 
 static const struct vcoproc_ops vcoproc_xxx_vcoproc_ops = {
 	.vcoproc_init = vcoproc_xxx_vcoproc_init,
-	.vcoproc_free = vcoproc_xxx_vcoproc_free,
+	.vcoproc_deinit = vcoproc_xxx_vcoproc_deinit,
 	.vcoproc_is_created = coproc_xxx_vcoproc_is_created,
 	.ctx_switch_from = vcoproc_xxx_ctx_switch_from,
 	.ctx_switch_to = vcoproc_xxx_ctx_switch_to,
