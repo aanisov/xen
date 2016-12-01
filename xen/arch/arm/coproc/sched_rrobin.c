@@ -19,18 +19,14 @@
 
 static s_time_t rr_slice = MILLISECS(1000);
 
-/*
- * System-wide private data
- */
+/* system-wide private data */
 struct rr_private {
 	spinlock_t lock;
 	/* list of runnable vcoprocs */
 	struct list_head runq;
 };
 
-/*
- * vcoproc
- */
+/* vcoproc */
 struct rr_vcoproc {
 	/* on the runq list */
 	struct list_head runq_elem;
@@ -112,7 +108,6 @@ static struct rr_vcoproc *runq_pick(const struct vcoproc_scheduler *ops)
 	return svc;
 }
 
-/* This function selects a vcoproc to run */
 static struct vcoproc_task_slice rr_do_schedule(const struct vcoproc_scheduler *ops, s_time_t now)
 {
 	struct rr_vcoproc *next;
@@ -130,7 +125,6 @@ static struct vcoproc_task_slice rr_do_schedule(const struct vcoproc_scheduler *
 	return ret;
 }
 
-/* This function inserts a selected in do_schedule() vcoproc back to the runqueue */
 static void rr_schedule_completed(const struct vcoproc_scheduler *ops, struct vcoproc_instance *vcoproc,
 		int scheduled)
 {
@@ -150,7 +144,6 @@ static void rr_yield(const struct vcoproc_scheduler *ops, struct vcoproc_instanc
 	/* nothing to do */
 }
 
-/* This function inserts vcoproc to the runqueue */
 static void rr_wake(const struct vcoproc_scheduler *ops, struct vcoproc_instance *vcoproc)
 {
 	struct rr_vcoproc *svc = rr_vcoproc(vcoproc);
@@ -164,7 +157,6 @@ static void rr_wake(const struct vcoproc_scheduler *ops, struct vcoproc_instance
 		runq_insert_head(ops, svc);
 }
 
-/* This function removes vcoproc from the runqueue */
 static void rr_sleep(const struct vcoproc_scheduler *ops, struct vcoproc_instance *vcoproc)
 {
 	struct rr_vcoproc *svc = rr_vcoproc(vcoproc);
@@ -178,7 +170,6 @@ static void rr_sleep(const struct vcoproc_scheduler *ops, struct vcoproc_instanc
 		runq_remove(svc);
 }
 
-/* This function allocates scheduler-specific data for a vcoproc */
 static void *rr_alloc_vdata(const struct vcoproc_scheduler *ops, struct vcoproc_instance *vcoproc)
 {
 	struct rr_vcoproc *svc;
@@ -194,7 +185,6 @@ static void *rr_alloc_vdata(const struct vcoproc_scheduler *ops, struct vcoproc_
 	return svc;
 }
 
-/* This function frees scheduler-specific data for a vcoproc */
 static void rr_free_vdata(const struct vcoproc_scheduler *ops, void *priv)
 {
 	struct rr_vcoproc *svc = priv;
@@ -202,7 +192,6 @@ static void rr_free_vdata(const struct vcoproc_scheduler *ops, void *priv)
 	xfree(svc);
 }
 
-/* This function performs initialization for an instance of the scheduler */
 static int rr_init(struct vcoproc_scheduler *ops)
 {
 	struct rr_private *priv;
@@ -219,7 +208,6 @@ static int rr_init(struct vcoproc_scheduler *ops)
 	return 0;
 }
 
-/* This function performs deinitialization for an instance of the scheduler */
 static void rr_deinit(struct vcoproc_scheduler *ops)
 {
 	struct rr_private *priv = rr_priv(ops);
