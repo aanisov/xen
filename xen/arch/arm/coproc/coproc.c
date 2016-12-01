@@ -18,37 +18,42 @@
 
 #include "coproc.h"
 
-/* dom0_coprocs: comma-separated list of coprocs for domain 0. */
+/* dom0_coprocs: comma-separated list of coprocs for domain 0 */
 static char __initdata opt_dom0_coprocs[128] = "";
 string_param("dom0_coprocs", opt_dom0_coprocs);
 
-/* The "framework's" global coprocs list is used to keep track
- * of all coproc instances that have been registered in the framework */
+/*
+ * the "framework's" global list is used to keep track
+ * of all coproc devices that have been registered in the framework
+ */
 static LIST_HEAD(coprocs);
+/* to protect both operations with the coproc and global coprocs list here */
 static DEFINE_SPINLOCK(coprocs_lock);
+/* the number of registered coproc devices */
 static int num_coprocs;
 
-int vcoproc_context_switch(struct vcoproc_instance *curr, struct vcoproc_instance *next)
+s_time_t vcoproc_context_switch(struct vcoproc_instance *curr, struct vcoproc_instance *next)
 {
     struct coproc_device *coproc;
-    int ret = 0;
+    s_time_t wait_time;
+    int ret;
 
     if ( unlikely(curr == next) )
         return 0;
 
-    /* It is no matter who will provide coproc */
     coproc = next ? next->coproc : curr->coproc;
 
-    ret = coproc->ops->ctx_switch_from(curr);
-    if ( ret )
-        return ret;
+    wait_time = coproc->ops->ctx_switch_from(curr);
+    if ( wait_time )
+        return wait_time;
 
+    /* TODO What to do if we failed to switch to "next"? */
     ret = coproc->ops->ctx_switch_to(next);
     if ( ret )
         panic("Failed to switch context to vcoproc \"%s\" (%d)\n",
               dev_path(coproc->dev), ret);
 
-    return ret;
+    return 0;
 }
 
 void vcoproc_continue_running(struct vcoproc_instance *same)
@@ -71,7 +76,7 @@ static struct coproc_device *coproc_find_by_path(const char *path)
 
     list_for_each_entry(coproc, &coprocs, coproc_elem)
     {
-        if ( !strcmp(dev_path(coproc->dev), path) )
+        if ( !strncmp(dev_path(coproc->dev), path, strlen(path)) )
         {
             found = true;
             break;
@@ -111,15 +116,13 @@ static int coproc_attach_to_domain(struct domain *d, struct coproc_device *copro
     ret = vcoproc_scheduler_vcoproc_init(coproc->sched, vcoproc);
     if ( ret )
     {
-        coproc->ops->vcoproc_free(d, vcoproc);
+        coproc->ops->vcoproc_deinit(d, vcoproc);
         goto out;
     }
 
-    spin_lock(&vcoproc_d->lock);
     BUG_ON(vcoproc_d->num_instances >= num_coprocs);
     list_add_tail(&vcoproc->instance_elem, &vcoproc_d->instances);
     vcoproc_d->num_instances++;
-    spin_unlock(&vcoproc_d->lock);
 
     printk("Created vcoproc \"%s\" for dom%u\n",
            dev_path(coproc->dev), d->domain_id);
@@ -150,9 +153,9 @@ static int coproc_detach_from_domain(struct domain *d, struct vcoproc_instance *
     if ( !vcoproc )
         return 0;
 
-    coproc = vcoproc->coproc;
-
     spin_lock(&coprocs_lock);
+
+    coproc = vcoproc->coproc;
 
     ret = vcoproc_scheduler_vcoproc_destroy(coproc->sched, vcoproc);
     if ( ret )
@@ -162,13 +165,11 @@ static int coproc_detach_from_domain(struct domain *d, struct vcoproc_instance *
         goto out;
     }
 
-    spin_lock(&vcoproc_d->lock);
     BUG_ON(!vcoproc_d->num_instances);
     list_del_init(&vcoproc->instance_elem);
     vcoproc_d->num_instances--;
-    spin_unlock(&vcoproc_d->lock);
 
-    coproc->ops->vcoproc_free(d, vcoproc);
+    coproc->ops->vcoproc_deinit(d, vcoproc);
 
     printk("Destroyed vcoproc \"%s\" for dom%u\n",
             dev_path(coproc->dev), d->domain_id);
@@ -182,15 +183,20 @@ out:
 bool_t coproc_is_attached_to_domain(struct domain *d, const char *path)
 {
     struct coproc_device *coproc;
+    bool_t is_created;
 
     coproc = coproc_find_by_path(path);
     if ( !coproc )
         return false;
 
-    return coproc->ops->vcoproc_is_created(d, coproc);
+    spin_lock(&coprocs_lock);
+    is_created = coproc->ops->vcoproc_is_created(d, coproc);
+    spin_unlock(&coprocs_lock);
+
+    return is_created;
 }
 
-static int vcoproc_dom0_init(struct domain *d)
+static int __init vcoproc_dom0_init(struct domain *d)
 {
     const char *curr, *next;
     int len, ret = 0;
@@ -266,7 +272,6 @@ int vcoproc_domain_init(struct domain *d)
 
     vcoproc_d->num_instances = 0;
     INIT_LIST_HEAD(&vcoproc_d->instances);
-    spin_lock_init(&vcoproc_d->lock);
 
     /*
      * We haven't known yet if the guest domain are going to use coprocs.
@@ -301,28 +306,16 @@ int coproc_release_vcoprocs(struct domain *d)
 {
     struct vcoproc *vcoproc_d = &d->arch.vcoproc;
     struct vcoproc_instance *vcoproc, *temp;
-    int ret = 0;
-
-    spin_lock(&vcoproc_d->lock);
-
-    if ( list_empty(&vcoproc_d->instances) )
-        goto out;
+    int ret;
 
     list_for_each_entry_safe( vcoproc, temp, &vcoproc_d->instances, instance_elem )
     {
-        spin_unlock(&vcoproc_d->lock);
-
         ret = coproc_detach_from_domain(d, vcoproc);
         if ( ret )
             return ret;
-
-        spin_lock(&vcoproc_d->lock);
     }
 
-out:
-    spin_unlock(&vcoproc_d->lock);
-
-    return ret;
+    return 0;
 }
 
 int coproc_do_domctl(struct xen_domctl *domctl, struct domain *d,

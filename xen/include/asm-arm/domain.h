@@ -123,7 +123,7 @@ struct arch_domain
 
 #ifdef CONFIG_HAS_COPROC
     struct vcoproc {
-        spinlock_t lock;
+        /* The number of vcoproc instances for this domain */
         int num_instances;
         /* The "domain's" instances list is used to keep track of all vcoproc
          * instances that have been created for this domain */

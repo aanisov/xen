@@ -17,9 +17,6 @@
 
 #include "coproc.h"
 
-/* TODO Should be coproc specific */
-static s_time_t coproc_wait_time = MILLISECS(500);
-
 /* TODO Each coproc may have its own algorithm */
 static char __initdata opt_vcoproc_sched[10] = "rrobin";
 string_param("vcoproc_sched", opt_vcoproc_sched);
@@ -49,21 +46,13 @@ static struct vcoproc_instance *vcoproc_scheduler_get_current(const struct vcopr
 	return sched_data->curr;
 }
 
-bool_t vcoproc_scheduler_vcoproc_is_destroyed(struct vcoproc_scheduler *sched,
+static bool_t vcoproc_scheduler_vcoproc_is_destroyed(struct vcoproc_scheduler *sched,
 		struct vcoproc_instance *vcoproc)
 {
-	struct vcoproc_schedule_data *sched_data = sched->sched_priv;
-	unsigned long flags;
-	bool_t destroyed;
-
 	if ( !vcoproc )
 		return true;
 
-	spin_lock_irqsave(&sched_data->schedule_lock, flags);
-	destroyed = vcoproc->state == VCOPROC_UNKNOWN ? true : false;
-	spin_unlock_irqrestore(&sched_data->schedule_lock, flags);
-
-	return destroyed;
+	return vcoproc->state == VCOPROC_UNKNOWN ? true : false;
 }
 
 int vcoproc_scheduler_vcoproc_init(struct vcoproc_scheduler *sched,
@@ -103,7 +92,7 @@ int vcoproc_scheduler_vcoproc_destroy(struct vcoproc_scheduler *sched,
 	vcoproc_sheduler_vcoproc_sleep(sched, vcoproc);
 
 	spin_lock_irqsave(&sched_data->schedule_lock, flags);
-	if ( vcoproc->state == VCOPROC_TERMINATING )
+	if ( vcoproc->state == VCOPROC_ASKED_TO_SLEEP )
 	{
 		spin_unlock_irqrestore(&sched_data->schedule_lock, flags);
 		return -EBUSY;
@@ -127,7 +116,7 @@ void vcoproc_sheduler_vcoproc_wake(struct vcoproc_scheduler *sched, struct vcopr
 
 	ASSERT(!vcoproc_scheduler_vcoproc_is_destroyed(sched, vcoproc));
 
-	/* TODO What to do if we came with state TERMINATING? */
+	/* TODO What to do if we came with state ASKED_TO_SLEEP? */
 	spin_lock_irqsave(&sched_data->schedule_lock, flags);
 	if ( vcoproc->state != VCOPROC_SLEEPING )
 	{
@@ -146,7 +135,7 @@ void vcoproc_sheduler_vcoproc_sleep(struct vcoproc_scheduler *sched, struct vcop
 {
 	struct vcoproc_schedule_data *sched_data = sched->sched_priv;
 	unsigned long flags;
-	int reschedule = 0;
+	bool_t reschedule = false;
 
 	ASSERT(!vcoproc_scheduler_vcoproc_is_destroyed(sched, vcoproc));
 
@@ -162,8 +151,8 @@ void vcoproc_sheduler_vcoproc_sleep(struct vcoproc_scheduler *sched, struct vcop
 		vcoproc->state = VCOPROC_SLEEPING;
 	else
 	{
-		vcoproc->state = VCOPROC_TERMINATING;
-		reschedule = 1;
+		vcoproc->state = VCOPROC_ASKED_TO_SLEEP;
+		reschedule = true;
 	}
 	spin_unlock_irqrestore(&sched_data->schedule_lock, flags);
 
@@ -196,7 +185,7 @@ void vcoproc_schedule(struct vcoproc_scheduler *sched)
 	struct vcoproc_instance *curr, *next;
 	struct vcoproc_schedule_data *sched_data = sched->sched_priv;
 	struct vcoproc_task_slice next_slice;
-	s_time_t now;
+	s_time_t wait_time, now;
 	unsigned long flags;
 
 	spin_lock_irqsave(&sched_data->schedule_lock, flags);
@@ -212,10 +201,12 @@ void vcoproc_schedule(struct vcoproc_scheduler *sched)
 	if ( unlikely(!curr && !next) )
 		goto out;
 
-	if ( vcoproc_context_switch(curr, next) )
+	wait_time = vcoproc_context_switch(curr, next);
+	ASSERT(wait_time >= 0);
+
+	if ( wait_time > 0 )
 	{
-		if ( coproc_wait_time >= 0 )
-			set_timer(&sched_data->s_timer, now + coproc_wait_time);
+		set_timer(&sched_data->s_timer, now + wait_time);
 
 		VCOPROC_SCHED_OP(sched, schedule_completed, next, 0);
 		vcoproc_continue_running(curr);
@@ -255,7 +246,8 @@ struct vcoproc_scheduler * __init vcoproc_scheduler_init(struct coproc_device *c
 
 	for ( i = 0; vcoproc_schedulers[i]; i++ )
 	{
-		if ( !strcmp(vcoproc_schedulers[i]->opt_name, opt_vcoproc_sched) )
+		if ( !strncmp(vcoproc_schedulers[i]->opt_name, opt_vcoproc_sched,
+				strlen(opt_vcoproc_sched)) )
 			break;
 	}
 
