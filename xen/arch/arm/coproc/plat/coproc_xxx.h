@@ -1,6 +1,11 @@
 /*
  * xen/arch/arm/coproc/plat/coproc_xxx.h
  *
+ * COPROC_XXX platform specific header
+ *
+ * Oleksandr Tyshchenko <Oleksandr_Tyshchenko@epam.com>
+ * Copyright (C) 2016 EPAM Systems Inc.
+ *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
@@ -12,13 +17,13 @@
  * GNU General Public License for more details.
  */
 
-#ifndef __COPROC_XXX_H_
-#define __COPROC_XXX_H_
+#ifndef __ARCH_ARM_COPROC_PLAT_COPROC_XXX_H__
+#define __ARCH_ARM_COPROC_PLAT_COPROC_XXX_H__
 
 #include "../coproc.h"
 #include "common.h"
 
-#endif /* __COPROC_XXX_H_ */
+#endif /* __ARCH_ARM_COPROC_PLAT_COPROC_XXX_H__ */
 
 /*
  * Local variables:

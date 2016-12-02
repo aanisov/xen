@@ -1,6 +1,11 @@
 /*
  * xen/arch/arm/coproc/plat/common.h
  *
+ * Common platform header for all Remote processors
+ *
+ * Oleksandr Tyshchenko <Oleksandr_Tyshchenko@epam.com>
+ * Copyright (C) 2016 EPAM Systems Inc.
+ *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
@@ -12,8 +17,8 @@
  * GNU General Public License for more details.
  */
 
-#ifndef __COMMON_H_
-#define __COMMON_H_
+#ifndef __ARCH_ARM_COPROC_PLAT_COMMON_H__
+#define __ARCH_ARM_COPROC_PLAT_COMMON_H__
 
 #include <xen/types.h>
 #include <xen/device_tree.h>
@@ -23,9 +28,9 @@
 
 struct resource
 {
-	u64 addr;
-	u64 size;
-	unsigned int type;
+    u64 addr;
+    u64 size;
+    unsigned int type;
 };
 
 #define resource_size(res) (res)->size;
@@ -37,22 +42,22 @@ struct resource
 #define IORESOURCE_IRQ 1
 
 struct resource *platform_get_resource(struct platform_device *pdev,
-					      unsigned int type,
-					      unsigned int num);
+                                       unsigned int type,
+                                       unsigned int num);
 void __iomem *devm_ioremap_resource(struct device *dev,
-					   struct resource *res);
+                                    struct resource *res);
 
 /* Device logger functions */
-#define dev_print(dev, lvl, fmt, ...)						\
-	 printk(lvl "coproc: %s: " fmt, dt_node_full_name(dev_to_dt(dev)), ## __VA_ARGS__)
+#define dev_print(dev, lvl, fmt, ...) \
+    printk(lvl "coproc: %s: " fmt, dt_node_full_name(dev_to_dt(dev)), ## __VA_ARGS__)
 
 #define dev_dbg(dev, fmt, ...) dev_print(dev, XENLOG_DEBUG, fmt, ## __VA_ARGS__)
 #define dev_notice(dev, fmt, ...) dev_print(dev, XENLOG_INFO, fmt, ## __VA_ARGS__)
 #define dev_warn(dev, fmt, ...) dev_print(dev, XENLOG_WARNING, fmt, ## __VA_ARGS__)
 #define dev_err(dev, fmt, ...) dev_print(dev, XENLOG_ERR, fmt, ## __VA_ARGS__)
 
-#define dev_err_ratelimited(dev, fmt, ...)					\
-	 dev_print(dev, XENLOG_ERR, fmt, ## __VA_ARGS__)
+#define dev_err_ratelimited(dev, fmt, ...) \
+    dev_print(dev, XENLOG_ERR, fmt, ## __VA_ARGS__)
 
 /* Copied from vgic.h */
 
@@ -163,7 +168,7 @@ COPROC_REG_HELPERS(32, 0x3);
 
 #undef COPROC_REG_HELPERS
 
-#endif /* __COMMON_H_ */
+#endif /* __ARCH_ARM_COPROC_PLAT_COMMON_H__ */
 
 /*
  * Local variables:
