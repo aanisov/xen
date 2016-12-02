@@ -1,6 +1,11 @@
 /*
  * xen/arch/arm/coproc/coproc.h
  *
+ * Generic Remote processors framework
+ *
+ * Oleksandr Tyshchenko <Oleksandr_Tyshchenko@epam.com>
+ * Copyright (C) 2016 EPAM Systems Inc.
+ *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
@@ -12,8 +17,8 @@
  * GNU General Public License for more details.
  */
 
-#ifndef __COPROC_H_
-#define __COPROC_H_
+#ifndef __ARCH_ARM_COPROC_COPROC_H__
+#define __ARCH_ARM_COPROC_COPROC_H__
 
 #include <xen/types.h>
 #include <xen/list.h>
@@ -70,7 +75,8 @@ struct coproc_device {
 /* coproc callback functions */
 struct vcoproc_ops {
     /* callback to perform initialization for the vcoproc instance */
-    struct vcoproc_instance *(*vcoproc_init)(struct domain *, struct coproc_device *);
+    struct vcoproc_instance *(*vcoproc_init)(struct domain *,
+                                             struct coproc_device *);
     /* callback to perform deinitialization for the vcoproc instance */
     void (*vcoproc_deinit)(struct domain *, struct vcoproc_instance *);
     /*
@@ -125,15 +131,17 @@ void coproc_init(void);
 int coproc_register(struct coproc_device *);
 int vcoproc_domain_init(struct domain *);
 void vcoproc_domain_free(struct domain *);
-int coproc_do_domctl(struct xen_domctl *, struct domain *, XEN_GUEST_HANDLE_PARAM(xen_domctl_t));
+int coproc_do_domctl(struct xen_domctl *, struct domain *,
+                     XEN_GUEST_HANDLE_PARAM(xen_domctl_t));
 bool_t coproc_is_attached_to_domain(struct domain *, const char *);
-s_time_t vcoproc_context_switch(struct vcoproc_instance *, struct vcoproc_instance *);
+s_time_t vcoproc_context_switch(struct vcoproc_instance *,
+                                struct vcoproc_instance *);
 void vcoproc_continue_running(struct vcoproc_instance *);
 int coproc_release_vcoprocs(struct domain *);
 
 #define dev_path(dev) dt_node_full_name(dev_to_dt(dev))
 
-#endif /* __COPROC_H_ */
+#endif /* __ARCH_ARM_COPROC_COPROC_H__ */
 
 /*
  * Local variables:

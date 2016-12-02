@@ -1,6 +1,11 @@
 /*
  * xen/arch/arm/coproc/coproc.c
  *
+ * Generic Remote processors framework
+ *
+ * Oleksandr Tyshchenko <Oleksandr_Tyshchenko@epam.com>
+ * Copyright (C) 2016 EPAM Systems Inc.
+ *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
@@ -32,7 +37,8 @@ static DEFINE_SPINLOCK(coprocs_lock);
 /* the number of registered coproc devices */
 static int num_coprocs;
 
-s_time_t vcoproc_context_switch(struct vcoproc_instance *curr, struct vcoproc_instance *next)
+s_time_t vcoproc_context_switch(struct vcoproc_instance *curr,
+                                struct vcoproc_instance *next)
 {
     struct coproc_device *coproc;
     s_time_t wait_time;
@@ -89,7 +95,8 @@ out:
     return found ? coproc : NULL;
 }
 
-static int coproc_attach_to_domain(struct domain *d, struct coproc_device *coproc)
+static int coproc_attach_to_domain(struct domain *d,
+                                   struct coproc_device *coproc)
 {
     struct vcoproc *vcoproc_d = &d->arch.vcoproc;
     struct vcoproc_instance *vcoproc;
@@ -144,7 +151,8 @@ static int coproc_find_and_attach_to_domain(struct domain *d, const char *path)
     return coproc_attach_to_domain(d, coproc);
 }
 
-static int coproc_detach_from_domain(struct domain *d, struct vcoproc_instance *vcoproc)
+static int coproc_detach_from_domain(struct domain *d,
+                                     struct vcoproc_instance *vcoproc)
 {
     struct vcoproc *vcoproc_d = &d->arch.vcoproc;
     struct coproc_device *coproc;
@@ -308,7 +316,8 @@ int coproc_release_vcoprocs(struct domain *d)
     struct vcoproc_instance *vcoproc, *temp;
     int ret;
 
-    list_for_each_entry_safe( vcoproc, temp, &vcoproc_d->instances, instance_elem )
+    list_for_each_entry_safe( vcoproc, temp, &vcoproc_d->instances,
+                              instance_elem )
     {
         ret = coproc_detach_from_domain(d, vcoproc);
         if ( ret )

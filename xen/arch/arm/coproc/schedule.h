@@ -1,6 +1,11 @@
 /*
  * xen/arch/arm/coproc/schedule.h
  *
+ * Generic Scheduler for the Remote processors
+ *
+ * Oleksandr Tyshchenko <Oleksandr_Tyshchenko@epam.com>
+ * Copyright (C) 2016 EPAM Systems Inc.
+ *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
@@ -12,8 +17,8 @@
  * GNU General Public License for more details.
  */
 
-#ifndef __SCHEDULE_H_
-#define __SCHEDULE_H_
+#ifndef __ARCH_ARM_COPROC_SCHEDULE_H_
+#define __ARCH_ARM_COPROC_SCHEDULE_H_
 
 #include <xen/timer.h>
 #include <xen/types.h>
@@ -57,7 +62,8 @@ struct vcoproc_scheduler {
     /* callback to perform deinitialization for the scheduler instance */
     void (*deinit)(struct vcoproc_scheduler *);
     /* callback to allocate scheduler-specific data for the vcoproc */
-    void *(*alloc_vdata)(const struct vcoproc_scheduler *, struct vcoproc_instance *);
+    void *(*alloc_vdata)(const struct vcoproc_scheduler *,
+                         struct vcoproc_instance *);
     /* callback to free scheduler-specific data for the vcoproc */
     void (*free_vdata)(const struct vcoproc_scheduler *, void *);
     /* callback to sleep the vcoproc */
@@ -67,14 +73,17 @@ struct vcoproc_scheduler {
     /* callback to yield the vcoproc */
     void (*yield)(const struct vcoproc_scheduler *, struct vcoproc_instance *);
     /* callback to select the vcoproc to run */
-    struct vcoproc_task_slice (*do_schedule)(const struct vcoproc_scheduler *, s_time_t);
+    struct vcoproc_task_slice (*do_schedule)(const struct vcoproc_scheduler *,
+                                             s_time_t);
     /* callback to notify about vcoproc that was previously selected to run */
-    void (*schedule_completed)(const struct vcoproc_scheduler *, struct vcoproc_instance *, int);
+    void (*schedule_completed)(const struct vcoproc_scheduler *,
+                               struct vcoproc_instance *, int);
 
     /*
      * TODO Here the scheduler core stores *schedule_data to interact with.
      * The algorithm shouldn't touch it and even know about it.
-     * So, it would be correctly to remove it from here, but where to keep it?!
+     * So, it would be correctly to remove it from here,
+     * but where to keep it?!
      */
     void *sched_priv;
 };
@@ -82,14 +91,19 @@ struct vcoproc_scheduler {
 struct coproc_device;
 
 struct vcoproc_scheduler *vcoproc_scheduler_init(struct coproc_device *);
-int vcoproc_scheduler_vcoproc_init(struct vcoproc_scheduler *, struct vcoproc_instance *);
-int vcoproc_scheduler_vcoproc_destroy(struct vcoproc_scheduler *, struct vcoproc_instance *);
+int vcoproc_scheduler_vcoproc_init(struct vcoproc_scheduler *,
+                                   struct vcoproc_instance *);
+int vcoproc_scheduler_vcoproc_destroy(struct vcoproc_scheduler *,
+                                      struct vcoproc_instance *);
 void vcoproc_schedule(struct vcoproc_scheduler *);
-void vcoproc_sheduler_vcoproc_wake(struct vcoproc_scheduler *, struct vcoproc_instance *);
-void vcoproc_sheduler_vcoproc_sleep(struct vcoproc_scheduler *, struct vcoproc_instance *);
-void vcoproc_sheduler_vcoproc_yield(struct vcoproc_scheduler *, struct vcoproc_instance *);
+void vcoproc_sheduler_vcoproc_wake(struct vcoproc_scheduler *,
+                                   struct vcoproc_instance *);
+void vcoproc_sheduler_vcoproc_sleep(struct vcoproc_scheduler *,
+                                    struct vcoproc_instance *);
+void vcoproc_sheduler_vcoproc_yield(struct vcoproc_scheduler *,
+                                    struct vcoproc_instance *);
 
-#endif /* __SCHEDULE_H_ */
+#endif /* __ARCH_ARM_COPROC_SCHEDULE_H_ */
 
 /*
  * Local variables:
