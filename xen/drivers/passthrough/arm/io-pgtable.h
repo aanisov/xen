@@ -1,6 +1,10 @@
 #ifndef __IO_PGTABLE_H
 #define __IO_PGTABLE_H
-#include <linux/bitops.h>
+#include <asm/device.h>
+
+/* Xen */
+typedef paddr_t phys_addr_t;
+typedef paddr_t dma_addr_t;
 
 /*
  * Public API for use by IOMMU drivers
@@ -203,6 +207,8 @@ extern struct io_pgtable_init_fns io_pgtable_arm_32_lpae_s1_init_fns;
 extern struct io_pgtable_init_fns io_pgtable_arm_32_lpae_s2_init_fns;
 extern struct io_pgtable_init_fns io_pgtable_arm_64_lpae_s1_init_fns;
 extern struct io_pgtable_init_fns io_pgtable_arm_64_lpae_s2_init_fns;
+#ifdef CONFIG_IOMMU_IO_PGTABLE_ARMV7S
 extern struct io_pgtable_init_fns io_pgtable_arm_v7s_init_fns;
+#endif
 
 #endif /* __IO_PGTABLE_H */

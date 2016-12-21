@@ -18,11 +18,10 @@
  * Author: Will Deacon <will.deacon@arm.com>
  */
 
-#include <linux/bug.h>
-#include <linux/kernel.h>
-#include <linux/types.h>
-
 #include "io-pgtable.h"
+
+/* Xen: */
+#define CONFIG_IOMMU_IO_PGTABLE_LPAE
 
 static const struct io_pgtable_init_fns *
 io_pgtable_init_table[IO_PGTABLE_NUM_FMTS] = {

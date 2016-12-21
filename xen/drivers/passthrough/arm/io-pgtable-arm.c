@@ -18,18 +18,67 @@
  * Author: Will Deacon <will.deacon@arm.com>
  */
 
-#define pr_fmt(fmt)	"arm-lpae io-pgtable: " fmt
-
-#include <linux/iommu.h>
-#include <linux/kernel.h>
-#include <linux/sizes.h>
-#include <linux/slab.h>
-#include <linux/types.h>
-#include <linux/dma-mapping.h>
-
-#include <asm/barrier.h>
+#include <xen/config.h>
+#include <xen/delay.h>
+#include <xen/errno.h>
+#include <xen/err.h>
+#include <xen/irq.h>
+#include <xen/lib.h>
+#include <xen/list.h>
+#include <xen/mm.h>
+#include <xen/vmap.h>
+#include <xen/rbtree.h>
+#include <xen/sched.h>
+#include <xen/sizes.h>
+#include <xen/log2.h>
+#include <xen/domain_page.h>
+#include <asm/atomic.h>
+#include <asm/device.h>
+#include <asm/io.h>
+#include <asm/platform.h>
 
 #include "io-pgtable.h"
+
+/***** Start of Xen specific code *****/
+
+#define IOMMU_READ	(1 << 0)
+#define IOMMU_WRITE	(1 << 1)
+#define IOMMU_CACHE	(1 << 2) /* DMA cache coherency */
+#define IOMMU_NOEXEC	(1 << 3)
+#define IOMMU_MMIO	(1 << 4) /* e.g. things like MSI doorbells */
+
+#define virt_to_phys virt_to_maddr
+
+#define alloc_pages_exact(size, gfp_mask) \
+	alloc_xenheap_pages(get_order_from_bytes(size), 0)
+#define free_pages_exact(pages, size) \
+	free_xenheap_pages(pages, get_order_from_bytes(size))
+
+#define kfree xfree
+#define kmalloc(size, flags)		_xmalloc(size, sizeof(void *))
+#define kzalloc(size, flags)		_xzalloc(size, sizeof(void *))
+#define devm_kzalloc(dev, size, flags)	_xzalloc(size, sizeof(void *))
+#define kmalloc_array(size, n, flags)	_xmalloc_array(size, sizeof(void *), n)
+
+typedef enum {
+	GFP_KERNEL,
+	GFP_ATOMIC,
+	__GFP_HIGHMEM,
+	__GFP_HIGH
+} gfp_t;
+
+#define __fls(x) (fls(x) - 1)
+#define __ffs(x) (ffs(x) - 1)
+
+#undef WARN_ON
+#define WARN_ON(condition) ({                                           \
+        int __ret_warn_on = !!(condition);                              \
+        if (unlikely(__ret_warn_on))                                    \
+               WARN();                                                  \
+        unlikely(__ret_warn_on);                                        \
+})
+
+/***** Start of Linux allocator code *****/
 
 #define ARM_LPAE_MAX_ADDR_BITS		48
 #define ARM_LPAE_S2_MAX_CONCAT_PAGES	16
@@ -200,16 +249,20 @@ struct arm_lpae_io_pgtable {
 
 typedef u64 arm_lpae_iopte;
 
+#if 0 /* Xen: */
 static bool selftest_running = false;
 
 static dma_addr_t __arm_lpae_dma_addr(void *pages)
 {
 	return (dma_addr_t)virt_to_phys(pages);
 }
+#endif
 
+/* TODO Check for root order to be equal 1 and map/unmap pages everywhere */
 static void *__arm_lpae_alloc_pages(size_t size, gfp_t gfp,
 				    struct io_pgtable_cfg *cfg)
 {
+#if 0 /* Xen: */
 	struct device *dev = cfg->iommu_dev;
 	dma_addr_t dma;
 	void *pages = alloc_pages_exact(size, gfp | __GFP_ZERO);
@@ -238,26 +291,54 @@ out_unmap:
 out_free:
 	free_pages_exact(pages, size);
 	return NULL;
+#endif
+	struct page_info *pages;
+	unsigned int order = get_order_from_bytes(size);
+	int i;
+
+	pages = alloc_domheap_pages(NULL, order, 0);
+	if (pages == NULL)
+		return NULL;
+
+	for (i = 0; i < (1<<order); i ++)
+		clear_and_clean_page(pages + i);
+
+	/*printk("Alloc pages: order %u page %p virt %p maddr 0x%lx\n",
+			order, pages, page_to_virt(pages), virt_to_phys(page_to_virt(pages)));*/
+
+	return page_to_virt(pages);
 }
 
 static void __arm_lpae_free_pages(void *pages, size_t size,
 				  struct io_pgtable_cfg *cfg)
 {
+#if 0 /* Xen: */
 	if (!selftest_running)
 		dma_unmap_single(cfg->iommu_dev, __arm_lpae_dma_addr(pages),
 				 size, DMA_TO_DEVICE);
 	free_pages_exact(pages, size);
+#endif
+	unsigned int order = get_order_from_bytes(size);
+
+	/*printk("Free pages: order %u page %p virt %p maddr 0x%lx\n",
+			order, virt_to_page(pages), pages, virt_to_phys(pages));*/
+
+	free_domheap_pages(virt_to_page(pages), order);
 }
 
 static void __arm_lpae_set_pte(arm_lpae_iopte *ptep, arm_lpae_iopte pte,
 			       struct io_pgtable_cfg *cfg)
 {
+	dsb(sy);
 	*ptep = pte;
+	dsb(sy);
 
+#if 0 /* Xen: */
 	if (!selftest_running)
 		dma_sync_single_for_device(cfg->iommu_dev,
 					   __arm_lpae_dma_addr(ptep),
 					   sizeof(pte), DMA_TO_DEVICE);
+#endif
 }
 
 static int __arm_lpae_unmap(struct arm_lpae_io_pgtable *data,
@@ -274,7 +355,9 @@ static int arm_lpae_init_pte(struct arm_lpae_io_pgtable *data,
 
 	if (iopte_leaf(*ptep, lvl)) {
 		/* We require an unmap first */
+#if 0 /* Xen: */
 		WARN_ON(!selftest_running);
+#endif
 		return -EEXIST;
 	} else if (iopte_type(*ptep, lvl) == ARM_LPAE_PTE_TYPE_TABLE) {
 		/*
@@ -576,7 +659,9 @@ static phys_addr_t arm_lpae_iova_to_phys(struct io_pgtable_ops *ops,
 	return 0;
 
 found_translation:
-	iova &= (ARM_LPAE_GRANULE(data) - 1);
+	/* Sync with Linux */
+	/*iova &= (ARM_LPAE_GRANULE(data) - 1);*/
+	iova &= (ARM_LPAE_BLOCK_SIZE(lvl, data) - 1);
 	return ((phys_addr_t)iopte_to_pfn(pte,data) << data->pg_shift) | iova;
 }
 
@@ -632,10 +717,12 @@ arm_lpae_alloc_pgtable(struct io_pgtable_cfg *cfg)
 	if (cfg->oas > ARM_LPAE_MAX_ADDR_BITS)
 		return NULL;
 
+#if 0 /* Xen: */
 	if (!selftest_running && cfg->iommu_dev->dma_pfn_offset) {
 		dev_err(cfg->iommu_dev, "Cannot accommodate DMA offset for IOMMU page tables\n");
 		return NULL;
 	}
+#endif
 
 	data = kmalloc(sizeof(*data), GFP_KERNEL);
 	if (!data)
@@ -734,6 +821,12 @@ arm_64_lpae_alloc_pgtable_s1(struct io_pgtable_cfg *cfg, void *cookie)
 	data->pgd = __arm_lpae_alloc_pages(data->pgd_size, GFP_KERNEL, cfg);
 	if (!data->pgd)
 		goto out_free_data;
+
+	/*printk("cfg (arm_64_s1): pgsize_bitmap 0x%lx, ias %u-bit\n",
+			cfg->pgsize_bitmap, cfg->ias);
+	printk("data (arm_64_s1): %d levels, 0x%zx pgd_size, %lu pg_shift, %lu bits_per_level, pgd @ %p\n",
+			data->levels, data->pgd_size, data->pg_shift,
+			data->bits_per_level, data->pgd);*/
 
 	/* Ensure the empty pgd is visible before any actual TTBR write */
 	wmb();
@@ -894,6 +987,9 @@ struct io_pgtable_init_fns io_pgtable_arm_32_lpae_s2_init_fns = {
 	.alloc	= arm_32_lpae_alloc_pgtable_s2,
 	.free	= arm_lpae_free_pgtable,
 };
+
+/* Xen: */
+#undef CONFIG_IOMMU_IO_PGTABLE_LPAE_SELFTEST
 
 #ifdef CONFIG_IOMMU_IO_PGTABLE_LPAE_SELFTEST
 
