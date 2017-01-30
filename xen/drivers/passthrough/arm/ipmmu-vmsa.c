@@ -2423,6 +2423,12 @@ static __init int ipmmu_vmsa_init(struct dt_device_node *dev,
 	/* Mark all slaves that connected to the last IPMMU as protected. */
 	populate_ipmmu_slaves(mmu);
 
+	/*
+	 * The IPMMU can't reuse P2M table since it only supports
+	 * stage-1 page tables.
+	 */
+	iommu_hap_pt_share = false;
+
 	return 0;
 }
 
