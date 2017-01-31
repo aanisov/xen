@@ -372,6 +372,7 @@ static void set_archdata(struct device *dev, struct ipmmu_vmsa_archdata *p)
 #define IM_CTX_SIZE			0x40
 
 #define IMCTR				0x0000
+#define IMCTR_VA64			(1 << 29)
 #define IMCTR_TRE			(1 << 17)
 #define IMCTR_AFE			(1 << 16)
 #define IMCTR_RTSEL_MASK		(3 << 4)
@@ -419,7 +420,7 @@ static void set_archdata(struct device *dev, struct ipmmu_vmsa_archdata *p)
 #define IMTTBCR_SL0_LVL_2		(0 << 4)
 #define IMTTBCR_SL0_LVL_1		(1 << 4)
 #define IMTTBCR_TSZ0_MASK		(7 << 0)
-#define IMTTBCR_TSZ0_SHIFT		O
+#define IMTTBCR_TSZ0_SHIFT		0
 
 #define IMTTBCR_SL0_TWOBIT_LVL_3	(0 << 6)
 #define IMTTBCR_SL0_TWOBIT_LVL_2	(1 << 6)
@@ -719,7 +720,7 @@ static int ipmmu_domain_init_context(struct ipmmu_vmsa_domain *domain)
 	 */
 	domain->cfg.quirks = IO_PGTABLE_QUIRK_ARM_NS;
 	domain->cfg.pgsize_bitmap = SZ_1G | SZ_2M | SZ_4K,
-	domain->cfg.ias = 32;
+	domain->cfg.ias = 39;
 	domain->cfg.oas = 40;
 	domain->cfg.tlb = &ipmmu_gather_ops;
 	/*
@@ -728,7 +729,7 @@ static int ipmmu_domain_init_context(struct ipmmu_vmsa_domain *domain)
 	 */
 	domain->cfg.iommu_dev = domain->root->dev;
 
-	domain->iop = alloc_io_pgtable_ops(ARM_32_LPAE_S1, &domain->cfg,
+	domain->iop = alloc_io_pgtable_ops(ARM_64_LPAE_S1, &domain->cfg,
 					   domain);
 	if (!domain->iop)
 		return -EINVAL;
@@ -765,6 +766,8 @@ static int ipmmu_domain_init_context(struct ipmmu_vmsa_domain *domain)
 	else
 		tmp = IMTTBCR_SL0_LVL_1;
 
+	tmp |= (64ULL - domain->cfg.ias) << IMTTBCR_TSZ0_SHIFT;
+
 	ipmmu_ctx_write(domain, IMTTBCR, IMTTBCR_EAE |
 			IMTTBCR_SH0_INNER_SHAREABLE | IMTTBCR_ORGN0_WB_WA |
 			IMTTBCR_IRGN0_WB_WA | tmp);
@@ -791,7 +794,7 @@ static int ipmmu_domain_init_context(struct ipmmu_vmsa_domain *domain)
 	 * required when modifying the context registers.
 	 */
 	ipmmu_ctx_write2(domain, IMCTR,
-			 IMCTR_INTEN | IMCTR_FLUSH | IMCTR_MMUEN);
+			IMCTR_VA64 | IMCTR_INTEN | IMCTR_FLUSH | IMCTR_MMUEN);
 
 	return 0;
 }
