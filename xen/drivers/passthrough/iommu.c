@@ -141,6 +141,12 @@ int iommu_domain_init(struct domain *d)
     if ( !iommu_enabled )
         return 0;
 
+    if ( is_hardware_domain(d) )
+    {
+        iommu_dom0_strict = 1;
+        d->need_iommu = !!iommu_dom0_strict;
+    }
+
     hd->platform_ops = iommu_get_ops();
     return hd->platform_ops->init(d);
 }
@@ -155,8 +161,6 @@ static void __hwdom_init check_hwdom_reqs(struct domain *d)
     if ( iommu_passthrough )
         panic("Dom0 uses paging translated mode, dom0-passthrough must not be "
               "enabled\n");
-
-    iommu_dom0_strict = 1;
 }
 
 void __hwdom_init iommu_hwdom_init(struct domain *d)
@@ -169,7 +173,6 @@ void __hwdom_init iommu_hwdom_init(struct domain *d)
         return;
 
     register_keyhandler('o', &iommu_dump_p2m_table, "dump iommu p2m table", 0);
-    d->need_iommu = !!iommu_dom0_strict;
     if ( need_iommu(d) && !iommu_use_hap_pt(d) )
     {
         struct page_info *page;
