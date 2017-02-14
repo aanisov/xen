@@ -496,7 +496,7 @@ static void hvm_ioreq_server_free_rangesets(struct hvm_ioreq_server *s,
         return;
 
     for ( i = 0; i < NR_IO_RANGE_TYPES; i++ )
-        rangeset_destroy(s->range[i]);
+        domain_rangeset_destroy(s->range[i], s->domain);
 }
 
 static int hvm_ioreq_server_alloc_rangesets(struct hvm_ioreq_server *s,

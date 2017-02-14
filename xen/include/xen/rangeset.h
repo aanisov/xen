@@ -14,6 +14,7 @@
 
 struct domain;
 struct list_head;
+struct spinlock;
 struct rangeset;
 
 /*
@@ -37,11 +38,13 @@ struct rangeset *rangeset_new(char *name, unsigned int flags,
                               struct list_head **head);
 
 /*
- * Destroy a rangeset. It is invalid to perform any operation on a rangeset @r
+ * Destroy a rangeset. Rangeset will take an action to remove itself from a
+ * list. If a spinlock is provided it will be held during list deletion
+ * operation.
+ * It is invalid to perform any operation on a rangeset @r
  * after calling rangeset_destroy(r).
  */
-void rangeset_destroy(
-    struct rangeset *r);
+void rangeset_destroy(struct rangeset *r, struct spinlock *lock);
 
 /*
  * Set a limit on the number of ranges that may exist in set @r.
