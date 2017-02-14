@@ -13,6 +13,7 @@
 #include <xen/types.h>
 
 struct domain;
+struct list_head;
 struct rangeset;
 
 /*
@@ -28,15 +29,17 @@ void rangeset_domain_destroy(
     struct domain *d);
 
 /*
- * Create/destroy a rangeset. Optionally attach to specified domain @d for
- * auto-destruction when the domain dies. A name may be specified, for use
- * in debug pretty-printing, and various RANGESETF flags (defined below).
- * 
- * It is invalid to perform any operation on a rangeset @r after calling
- * rangeset_destroy(r).
+ * Create a rangeset. Optionally attach to a specified list @head.
+ * A name may be specified, for use in debug pretty-printing, and various
+ * RANGESETF flags (defined below).
  */
-struct rangeset *rangeset_new(
-    struct domain *d, char *name, unsigned int flags);
+struct rangeset *rangeset_new(char *name, unsigned int flags,
+                              struct list_head **head);
+
+/*
+ * Destroy a rangeset. It is invalid to perform any operation on a rangeset @r
+ * after calling rangeset_destroy(r).
+ */
 void rangeset_destroy(
     struct rangeset *r);
 

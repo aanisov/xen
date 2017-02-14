@@ -520,8 +520,8 @@ static int hvm_ioreq_server_alloc_rangesets(struct hvm_ioreq_server *s,
         if ( rc )
             goto fail;
 
-        s->range[i] = rangeset_new(s->domain, name,
-                                   RANGESETF_prettyprint_hex);
+        s->range[i] = domain_rangeset_new(s->domain, name,
+                                          RANGESETF_prettyprint_hex);
 
         xfree(name);
 

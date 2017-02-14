@@ -329,8 +329,8 @@ struct domain *domain_create(domid_t domid, unsigned int domcr_flags,
     rangeset_domain_initialise(d);
     init_status |= INIT_rangeset;
 
-    d->iomem_caps = rangeset_new(d, "I/O Memory", RANGESETF_prettyprint_hex);
-    d->irq_caps   = rangeset_new(d, "Interrupts", 0);
+    d->iomem_caps = domain_rangeset_new(d, "I/O Memory", RANGESETF_prettyprint_hex);
+    d->irq_caps   = domain_rangeset_new(d, "Interrupts", 0);
     if ( (d->iomem_caps == NULL) || (d->irq_caps == NULL) )
         goto fail;
 
@@ -1536,6 +1536,24 @@ int continue_hypercall_on_cpu(
     /* Dummy return value will be overwritten by tasklet. */
     return 0;
 }
+
+struct rangeset *domain_rangeset_new(struct domain *d, char *name,
+                                     unsigned int flags)
+{
+    struct list_head *head;
+    struct rangeset *r = rangeset_new(name, flags, &head);
+
+    if ( d != NULL )
+    {
+        spin_lock(&d->rangesets_lock);
+        list_add(head, &d->rangesets);
+        spin_unlock(&d->rangesets_lock);
+    }
+
+    return r;
+}
+
+
 
 /*
  * Local variables:

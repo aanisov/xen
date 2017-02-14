@@ -1419,8 +1419,8 @@ void __init noreturn __start_xen(unsigned long mbi_p)
     /* Low mappings were only needed for some BIOS table parsing. */
     zap_low_mappings();
 
-    mmio_ro_ranges = rangeset_new(NULL, "r/o mmio ranges",
-                                  RANGESETF_prettyprint_hex);
+    mmio_ro_ranges = rangeset_new("r/o mmio ranges",
+                                  RANGESETF_prettyprint_hex, NULL);
 
     init_apic_mappings();
 
