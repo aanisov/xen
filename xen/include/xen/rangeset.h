@@ -18,14 +18,12 @@ struct spinlock;
 struct rangeset;
 
 /*
- * Initialise/destroy per-domain rangeset information.
+ * Destroy per-domain rangeset information.
  * 
  * It is invalid to create or destroy a rangeset belonging to a domain @d
  * before rangeset_domain_initialise(d) returns or after calling
  * rangeset_domain_destroy(d).
  */
-void rangeset_domain_initialise(
-    struct domain *d);
 void rangeset_domain_destroy(
     struct domain *d);
 

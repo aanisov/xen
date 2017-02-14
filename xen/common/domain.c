@@ -326,7 +326,8 @@ struct domain *domain_create(domid_t domid, unsigned int domcr_flags,
         d->disable_migrate = 1;
     }
 
-    rangeset_domain_initialise(d);
+    INIT_LIST_HEAD(&d->rangesets);
+    spin_lock_init(&d->rangesets_lock);
     init_status |= INIT_rangeset;
 
     d->iomem_caps = domain_rangeset_new(d, "I/O Memory", RANGESETF_prettyprint_hex);

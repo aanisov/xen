@@ -381,13 +381,6 @@ void rangeset_limit(
     r->nr_ranges = limit;
 }
 
-void rangeset_domain_initialise(
-    struct domain *d)
-{
-    INIT_LIST_HEAD(&d->rangesets);
-    spin_lock_init(&d->rangesets_lock);
-}
-
 void rangeset_domain_destroy(
     struct domain *d)
 {
