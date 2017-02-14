@@ -31,7 +31,7 @@
 #include "schedule.h"
 
 /* coproc memory range */
-struct mmio {
+struct mmio {/*this is expected to be replaced by range (see rangset.c)*/
     u64 addr;
     u64 size;
     /* ioremapped addr */
@@ -110,6 +110,16 @@ enum vcoproc_state {
     VCOPROC_ASKED_TO_SLEEP
 };
 
+/* vcoproc memory range */
+struct vcoproc_mmio { /*this is expected to be replaced by range (see rangset.c)*/
+    u64 addr;
+    u64 size;
+    /* ioremapped addr */
+    void __iomem *base;
+
+    struct vcoproc_instance *vcoproc;
+};
+
 /* per-domain vcoproc instance */
 struct vcoproc_instance {
     struct coproc_device *coproc;
@@ -132,6 +142,11 @@ struct vcoproc_instance {
 
     /* scheduler-specific data */
     void *sched_priv;
+
+    /* the number of memory ranges for this vcoproc */
+    u32 num_mmios;
+    /* the array of memory ranges for this vcoproc */
+    struct vcoproc_mmio *mmios;
 
     /* vcoproc implementation specific data */
     void *priv;
