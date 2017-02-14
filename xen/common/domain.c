@@ -420,7 +420,7 @@ struct domain *domain_create(domid_t domid, unsigned int domcr_flags,
         radix_tree_destroy(&d->pirq_tree, free_pirq_struct);
     }
     if ( init_status & INIT_rangeset )
-        rangeset_domain_destroy(d);
+        rangeset_list_destroy(&d->rangesets);
     if ( init_status & INIT_watchdog )
         watchdog_domain_destroy(d);
     if ( init_status & INIT_xsm )
@@ -815,7 +815,7 @@ static void complete_domain_destroy(struct rcu_head *head)
 
     watchdog_domain_destroy(d);
 
-    rangeset_domain_destroy(d);
+    rangeset_list_destroy(&d->rangesets);
 
     sched_destroy_domain(d);
 
