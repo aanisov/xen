@@ -1560,6 +1560,20 @@ void domain_rangeset_destroy(struct domain *d,
     rangeset_destroy(r, &d->rangesets_lock);
 }
 
+void domain_rangeset_printk(
+    struct domain *d)
+{
+    printk("Rangesets belonging to domain %u:\n", d->domain_id);
+
+    spin_lock(&d->rangesets_lock);
+
+    if ( list_empty(&d->rangesets) )
+        printk("    None\n");
+
+    rangeset_list_printk(&d->rangesets);
+
+    spin_unlock(&d->rangesets_lock);
+}
 
 /*
  * Local variables:
