@@ -122,8 +122,8 @@ static int p2m_init_hostp2m(struct domain *d)
 
     if ( p2m )
     {
-        p2m->logdirty_ranges = rangeset_new(d, "log-dirty",
-                                            RANGESETF_prettyprint_hex);
+        p2m->logdirty_ranges = domain_rangeset_new(d, "log-dirty",
+                                                   RANGESETF_prettyprint_hex);
         if ( p2m->logdirty_ranges )
         {
             d->arch.p2m = p2m;

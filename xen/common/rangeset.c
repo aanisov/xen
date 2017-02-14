@@ -322,8 +322,8 @@ bool_t rangeset_is_empty(
     return ((r == NULL) || list_empty(&r->range_list));
 }
 
-struct rangeset *rangeset_new(
-    struct domain *d, char *name, unsigned int flags)
+struct rangeset *rangeset_new(char *name, unsigned int flags,
+                              struct list_head **head)
 {
     struct rangeset *r;
 
@@ -347,12 +347,8 @@ struct rangeset *rangeset_new(
         snprintf(r->name, sizeof(r->name), "(no name)");
     }
 
-    if ( (r->domain = d) != NULL )
-    {
-        spin_lock(&d->rangesets_lock);
-        list_add(&r->rangeset_list, &d->rangesets);
-        spin_unlock(&d->rangesets_lock);
-    }
+    if (head)
+        *head = &r->rangeset_list;
 
     return r;
 }

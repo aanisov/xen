@@ -630,7 +630,7 @@ int arch_domain_create(struct domain *d, unsigned int domcr_flags,
         d->arch.x86_model  = boot_cpu_data.x86_model;
 
         d->arch.ioport_caps = 
-            rangeset_new(d, "I/O Ports", RANGESETF_prettyprint_hex);
+            domain_rangeset_new(d, "I/O Ports", RANGESETF_prettyprint_hex);
         rc = -ENOMEM;
         if ( d->arch.ioport_caps == NULL )
             goto fail;
