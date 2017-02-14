@@ -111,4 +111,7 @@ void vnuma_destroy(struct vnuma_info *vnuma);
 struct rangeset *domain_rangeset_new(struct domain *d, char *name,
                                      unsigned int flags);
 
+void domain_rangeset_destroy(struct domain *d,
+    struct rangeset *r);
+
 #endif /* __XEN_DOMAIN_H__ */

@@ -141,7 +141,7 @@ static void p2m_teardown_hostp2m(struct domain *d)
 
     if ( p2m )
     {
-        rangeset_destroy(p2m->logdirty_ranges);
+        domain_rangeset_destroy(p2m->logdirty_ranges, d);
         p2m_free_one(p2m);
         d->arch.p2m = NULL;
     }

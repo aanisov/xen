@@ -354,19 +354,20 @@ struct rangeset *rangeset_new(char *name, unsigned int flags,
 }
 
 void rangeset_destroy(
-    struct rangeset *r)
+    struct rangeset *r, spinlock_t *lock)
 {
     struct range *x;
 
     if ( r == NULL )
         return;
 
-    if ( r->domain != NULL )
-    {
-        spin_lock(&r->domain->rangesets_lock);
-        list_del(&r->rangeset_list);
-        spin_unlock(&r->domain->rangesets_lock);
-    }
+    if ( lock )
+        spin_lock(lock);
+
+    list_del(&r->rangeset_list);
+
+    if ( lock )
+        spin_unlock(lock);
 
     while ( (x = first_range(r)) != NULL )
         destroy_range(r, x);

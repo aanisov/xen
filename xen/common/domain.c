@@ -1553,6 +1553,11 @@ struct rangeset *domain_rangeset_new(struct domain *d, char *name,
     return r;
 }
 
+void domain_rangeset_destroy(struct domain *d,
+    struct rangeset *r)
+{
+    rangeset_destroy(r, &d->rangesets_lock);
+}
 
 
 /*
