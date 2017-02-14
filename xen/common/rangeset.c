@@ -381,20 +381,17 @@ void rangeset_limit(
     r->nr_ranges = limit;
 }
 
-void rangeset_domain_destroy(
-    struct domain *d)
+void rangeset_list_destroy(struct list_head *list)
 {
     struct rangeset *r;
 
-    while ( !list_empty(&d->rangesets) )
+    while ( !list_empty(list) )
     {
-        r = list_entry(d->rangesets.next, struct rangeset, rangeset_list);
+        r = list_entry(list->next, struct rangeset, rangeset_list);
 
-        BUG_ON(r->domain != d);
-        r->domain = NULL;
         list_del(&r->rangeset_list);
 
-        rangeset_destroy(r);
+        rangeset_destroy(r, NULL);
     }
 }
 
