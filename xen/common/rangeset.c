@@ -455,26 +455,17 @@ void rangeset_printk(
     read_unlock(&r->lock);
 }
 
-void rangeset_domain_printk(
-    struct domain *d)
+void rangeset_list_printk(
+    struct list_head *list)
 {
     struct rangeset *r;
 
-    printk("Rangesets belonging to domain %u:\n", d->domain_id);
-
-    spin_lock(&d->rangesets_lock);
-
-    if ( list_empty(&d->rangesets) )
-        printk("    None\n");
-
-    list_for_each_entry ( r, &d->rangesets, rangeset_list )
+    list_for_each_entry ( r, list, rangeset_list )
     {
         printk("    ");
         rangeset_printk(r);
         printk("\n");
     }
-
-    spin_unlock(&d->rangesets_lock);
 }
 
 /*

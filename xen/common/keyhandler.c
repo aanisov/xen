@@ -320,7 +320,7 @@ static void dump_domains(unsigned char key)
 
         arch_dump_domain_info(d);
 
-        rangeset_domain_printk(d);
+        domain_rangeset_printk(d);
 
         dump_pageframe_info(d);
 

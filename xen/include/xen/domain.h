@@ -114,4 +114,7 @@ struct rangeset *domain_rangeset_new(struct domain *d, char *name,
 void domain_rangeset_destroy(struct domain *d,
     struct rangeset *r);
 
+void domain_rangeset_printk(
+    struct domain *d);
+
 #endif /* __XEN_DOMAIN_H__ */

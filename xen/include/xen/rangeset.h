@@ -81,8 +81,8 @@ void rangeset_swap(struct rangeset *a, struct rangeset *b);
 /* Rangeset pretty printing. */
 void rangeset_printk(
     struct rangeset *r);
-void rangeset_domain_printk(
-    struct domain *d);
+void rangeset_list_printk(
+    struct list_head *list);
 
 #endif /* __XEN_RANGESET_H__ */
 
