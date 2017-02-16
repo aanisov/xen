@@ -12,7 +12,6 @@
 
 #include <xen/types.h>
 
-struct domain;
 struct list_head;
 struct spinlock;
 struct rangeset;

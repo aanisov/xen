@@ -19,9 +19,8 @@ struct range {
 };
 
 struct rangeset {
-    /* Owning domain and threaded list of rangesets. */
+    /* threaded list of rangesets. */
     struct list_head rangeset_list;
-    struct domain   *domain;
 
     /* Ordered list of ranges contained in this set, and protecting lock. */
     struct list_head range_list;
