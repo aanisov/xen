@@ -20,8 +20,16 @@
 #ifndef __ARCH_ARM_COPROC_PLAT_COPROC_XXX_H__
 #define __ARCH_ARM_COPROC_PLAT_COPROC_XXX_H__
 
-#include "../coproc.h"
-#include "common.h"
+#include "../../coproc.h"
+#include "../common.h"
+
+int vcoproc_xxx_read(struct vcpu *v, mmio_info_t *info, register_t *r,
+                     void *priv);
+
+int vcoproc_xxx_write(struct vcpu *v, mmio_info_t *info, register_t r,
+                      void *priv);
+
+void coproc_xxx_irq_handler(int irq, void *dev, struct cpu_user_regs *regs);
 
 #endif /* __ARCH_ARM_COPROC_PLAT_COPROC_XXX_H__ */
 
