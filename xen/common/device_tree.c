@@ -1710,7 +1710,7 @@ int dt_parse_phandle_with_args(const struct dt_device_node *np,
  * @allnextpp: pointer to ->allnext from last allocated device_node
  * @fpsize: Size of the node path up at the current depth.
  */
-static unsigned long __init unflatten_dt_node(const void *fdt,
+static unsigned long unflatten_dt_node(const void *fdt,
                                               unsigned long mem,
                                               unsigned long *p,
                                               struct dt_device_node *dad,
@@ -1955,7 +1955,7 @@ static unsigned long __init unflatten_dt_node(const void *fdt,
  * @fdt: The fdt to expand
  * @mynodes: The device_node tree created by the call
  */
-static void __init __unflatten_device_tree(const void *fdt,
+static void* __unflatten_device_tree(const void *fdt,
                                            struct dt_device_node **mynodes)
 {
     unsigned long start, mem, size;
@@ -1994,6 +1994,8 @@ static void __init __unflatten_device_tree(const void *fdt,
     *allnextp = NULL;
 
     dt_dprintk(" <- unflatten_device_tree()\n");
+
+    return (void*) mem;
 }
 
 static void dt_alias_add(struct dt_alias_prop *ap,
@@ -2080,6 +2082,11 @@ void __init dt_unflatten_host_device_tree(void)
 {
     __unflatten_device_tree(device_tree_flattened, &dt_host);
     dt_alias_scan();
+}
+
+void* dt_unflatten_device_tree(void *fdt, struct dt_device_node ** pdt)
+{
+    return __unflatten_device_tree(fdt, pdt);
 }
 
 /*
