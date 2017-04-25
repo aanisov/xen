@@ -34,12 +34,13 @@ int vcoproc_xxx_read(struct vcpu *v, mmio_info_t *info, register_t *r,
 {
     struct vcoproc_mmio *mmio = priv;
     struct vcoproc_rw_context ctx;
+    struct mcoproc_device *mcoproc;
 
     vcoproc_get_rw_context(v->domain, mmio, info, &ctx);
-    COPROC_DEBUG(ctx.vcoproc->mcoproc->dev,
-                 "domain %u, read r%d=%"PRIregister" offset %#08x base %#08x\n",
-                 v->domain->domain_id, ctx.dabt.reg, *r, ctx.offset,
-                 (uint32_t)mmio->addr);
+    mcoproc = ctx.vcoproc->mcoproc;
+    COPROC_DEBUG(mcoproc->dev, "domain %u, read r%d=%"PRIregister
+                 " offset %#08x base %#08x\n", v->domain->domain_id,
+                 ctx.dabt.reg, *r, ctx.offset, (uint32_t)mmio->addr);
 
     return 1;
 }
@@ -49,12 +50,13 @@ int vcoproc_xxx_write(struct vcpu *v, mmio_info_t *info, register_t r,
 {
     struct vcoproc_mmio *mmio = priv;
     struct vcoproc_rw_context ctx;
+    struct mcoproc_device *mcoproc;
 
     vcoproc_get_rw_context(v->domain, mmio, info, &ctx);
-    COPROC_DEBUG(ctx.vcoproc->mcoproc->dev,
-                 "domain %u, write r%d=%"PRIregister" offset %#08x base %#08x\n",
-                 v->domain->domain_id, ctx.dabt.reg, r, ctx.offset,
-                 (uint32_t)mmio->addr);
+    mcoproc = ctx.vcoproc->mcoproc;
+    COPROC_DEBUG(mcoproc->dev, "domain %u, write r%d=%"PRIregister
+                 " offset %#08x base %#08x\n", v->domain->domain_id,
+                 ctx.dabt.reg, r, ctx.offset, (uint32_t)mmio->addr);
 
 #if 1
     /* for debug purposes */
@@ -66,13 +68,13 @@ int vcoproc_xxx_write(struct vcpu *v, mmio_info_t *info, register_t r,
         int i;
 
         /* Just inject all irqs that coproc has */
-        for ( i = 0; i < ctx.vcoproc->mcoproc->num_irqs; i++ )
-            vgic_vcpu_inject_spi(ctx.vcoproc->domain, ctx.vcoproc->mcoproc->irqs[i].irq);
+        for ( i = 0; i < mcoproc->num_irqs; i++ )
+            vgic_vcpu_inject_spi(ctx.vcoproc->domain, mcoproc->irqs[i].irq);
 
         if ( r & CORPOC_XXX_ENABLE )
-            vcoproc_scheduler_vcoproc_wake(ctx.vcoproc->mcoproc->sched, ctx.vcoproc);
+            vcoproc_scheduler_vcoproc_wake(mcoproc->sched, ctx.vcoproc);
         else
-            vcoproc_scheduler_vcoproc_sleep(ctx.vcoproc->mcoproc->sched, ctx.vcoproc);
+            vcoproc_scheduler_vcoproc_sleep(mcoproc->sched, ctx.vcoproc);
     }
 #endif
 
@@ -106,9 +108,9 @@ static struct pcoproc_irq coproc_xxx_irq[] = {
 };
 
 static const struct pcoproc_desc coproc_xxx_desc = {
-    .p_mmio_num = sizeof(coproc_xxx_mmio)/sizeof(struct pcoproc_mmio),
+    .p_mmio_num = ARRAY_SIZE(coproc_xxx_mmio),
     .p_mmio = coproc_xxx_mmio,
-    .p_irq_num = sizeof(coproc_xxx_irq)/sizeof(struct pcoproc_irq),
+    .p_irq_num = ARRAY_SIZE(coproc_xxx_irq),
     .p_irq = coproc_xxx_irq,
 };
 
@@ -151,23 +153,20 @@ static int coproc_xxx_dt_probe(struct dt_device_node *np)
     coproc_xxx = coproc_alloc(np,  &coproc_xxx_desc, &vcoproc_xxx_vcoproc_ops);
     if ( IS_ERR_OR_NULL(coproc_xxx) )
     {
-        COPROC_DEBUG(dev, "failed to allocate coproc\n");
         ret = PTR_ERR(coproc_xxx);
-        goto out;
+        COPROC_DEBUG(dev, "failed to allocate coproc (%d)\n", ret);
+        return ret;
     }
 
     ret = coproc_register(coproc_xxx);
     if ( ret )
     {
         COPROC_DEBUG(dev, "failed to register coproc (%d)\n", ret);
-        goto out;
+        coproc_release(coproc_xxx);
+        return ret;
     }
 
     return 0;
-
-out:
-    coproc_release(coproc_xxx);
-    return ret;
 }
 
 static const struct dt_device_match coproc_xxx_dt_match[] __initconst =
@@ -178,15 +177,10 @@ static const struct dt_device_match coproc_xxx_dt_match[] __initconst =
 
 static __init int coproc_xxx_init(struct dt_device_node *np, const void *data)
 {
-    int ret;
     /*TODO: Decide should we still need used by DOMID_XEN */
     dt_device_set_used_by(np, DOMID_XEN);
 
-    ret = coproc_xxx_dt_probe(np);
-    if ( ret )
-        return ret;
-
-    return 0;
+    return coproc_xxx_dt_probe(np);
 }
 
 DT_DEVICE_START(coproc_xxx, "COPROC_XXX", DEVICE_COPROC)

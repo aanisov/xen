@@ -52,7 +52,7 @@
  *     ops  - IO registers access emulation (r/w) handlers
  */
 struct pcoproc_mmio {
-    char *name;
+    const char *name;
     u64 size;
     struct mmio_handler_ops *ops;
 };
@@ -69,7 +69,7 @@ struct pcoproc_mmio {
  *     handler - irq handler function aware of this particular IRQ functionality
  */
 struct pcoproc_irq {
-    char *name;
+    const char *name;
     void (*handler)(int, void *, struct cpu_user_regs *);
 };
 
@@ -78,9 +78,9 @@ struct pcoproc_irq {
  * A structure what gathers coproc description (irq and mmio so far)
  */
 struct pcoproc_desc {
-    u64 p_mmio_num;
+    u32 p_mmio_num;
     struct pcoproc_mmio *p_mmio;
-    u64 p_irq_num;
+    u32 p_irq_num;
     struct pcoproc_irq *p_irq;
 };
 
@@ -111,7 +111,7 @@ struct mcoproc_mmio {
  */
 struct mcoproc_irq {
     /* actual IRQ number */
-    unsigned int irq; 
+    int irq; 
     /* pointer to a correspondent platform IRQ description */
     struct pcoproc_irq *p_irq;
 };
@@ -271,7 +271,7 @@ enum COPROC_DBG_LEVEL
     coproc_dev_print(dev, XENLOG_INFO,    COPROC_DBG_INFO, fmt, ## __VA_ARGS__)
 #define COPROC_DEBUG(dev, fmt, ...)                                            \
     coproc_dev_print(dev, XENLOG_DEBUG,   COPROC_DBG_DEBUG, fmt, ## __VA_ARGS__)
-#define COPROC_VERBOSE(dev, fmt, ...)                                            \
+#define COPROC_VERBOSE(dev, fmt, ...)                                          \
     coproc_dev_print(dev, XENLOG_DEBUG,   COPROC_DBG_VERB, fmt, ## __VA_ARGS__)
 
 void coproc_init(void);
@@ -286,14 +286,13 @@ int coproc_do_domctl(struct xen_domctl *, struct domain *,
                      XEN_GUEST_HANDLE_PARAM(xen_domctl_t));
 void vcoproc_continue_running(struct vcoproc_instance *);
 int coproc_release_vcoprocs(struct domain *);
-int vcoproc_handle_node(struct domain *d, void *fdt,
-                              const struct dt_device_node *node);
+int vcoproc_handle_node(struct domain *, void *, const struct dt_device_node *);
 
 #define dev_path(dev) dt_node_full_name(dev_to_dt(dev))
 
-static inline void vcoproc_get_rw_context(struct domain *d, struct vcoproc_mmio *v_mmio,
-                                          mmio_info_t *info,
-                                          struct vcoproc_rw_context *ctx)
+static inline void
+vcoproc_get_rw_context(struct domain *d, struct vcoproc_mmio *v_mmio,
+                       mmio_info_t *info, struct vcoproc_rw_context *ctx)
 {
     ctx->dabt = info->dabt;
     ctx->offset = info->gpa - v_mmio->addr;
@@ -301,7 +300,8 @@ static inline void vcoproc_get_rw_context(struct domain *d, struct vcoproc_mmio 
     BUG_ON(ctx->vcoproc == NULL);
 }
 
-/* time slice for this vcoproc has finished, save context and pause:
+/*
+ * time slice for this vcoproc has finished, save context and pause:
  * return value:
  *    0 - on success
  *   >0 - if more time is needed: time in ms that vcoproc still needs
@@ -309,13 +309,15 @@ static inline void vcoproc_get_rw_context(struct domain *d, struct vcoproc_mmio 
  *   <0 - unrecoverable failure: no future context switches are possible,
  *        coproc must be considered as non-functional
  */
-static inline s_time_t vcoproc_context_switch_from(struct vcoproc_instance *vcoproc)
+static inline s_time_t
+vcoproc_context_switch_from(struct vcoproc_instance *vcoproc)
 {
     ASSERT(vcoproc);
     return vcoproc->mcoproc->ops->ctx_switch_from(vcoproc);
 }
 
-/* new vcoproc has time slice, restore context and unpause:
+/*
+ * new vcoproc has time slice, restore context and unpause:
  * return value:
  *    0 - on success
  *   <0 - unrecoverable failure: no future context switches are possible,

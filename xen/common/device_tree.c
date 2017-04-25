@@ -1960,6 +1960,7 @@ static void* __unflatten_device_tree(const void *fdt,
 {
     unsigned long start, mem, size;
     struct dt_device_node **allnextp = mynodes;
+    void *ptr;
 
     dt_dprintk(" -> unflatten_device_tree()\n");
 
@@ -1976,7 +1977,11 @@ static void* __unflatten_device_tree(const void *fdt,
     dt_dprintk("  size is %#lx allocating...\n", size);
 
     /* Allocate memory for the expanded device tree */
-    mem = (unsigned long)_xmalloc (size + 4, __alignof__(struct dt_device_node));
+    ptr = _xmalloc (size + 4, __alignof__(struct dt_device_node));
+    if ( ptr == NULL )
+        goto out;
+
+    mem = (unsigned long)ptr;
 
     ((__be32 *)mem)[size / 4] = cpu_to_be32(0xdeadbeef);
 
@@ -1995,7 +2000,8 @@ static void* __unflatten_device_tree(const void *fdt,
 
     dt_dprintk(" <- unflatten_device_tree()\n");
 
-    return (void*) mem;
+out:
+    return ptr;
 }
 
 static void dt_alias_add(struct dt_alias_prop *ap,

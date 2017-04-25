@@ -46,15 +46,17 @@ static void vcoproc_scheduler_set_current(const struct vcoproc_scheduler *sched,
     sched_data->curr = vcoproc;
 }
 
-static struct vcoproc_instance *vcoproc_scheduler_get_current(const struct vcoproc_scheduler *sched)
+static struct vcoproc_instance *
+vcoproc_scheduler_get_current(const struct vcoproc_scheduler *sched)
 {
     struct vcoproc_schedule_data *sched_data = sched->sched_priv;
 
     return sched_data->curr;
 }
 
-static bool_t vcoproc_scheduler_vcoproc_is_destroyed(struct vcoproc_scheduler *sched,
-                                                     struct vcoproc_instance *vcoproc)
+static bool_t
+vcoproc_scheduler_vcoproc_is_destroyed(struct vcoproc_scheduler *sched,
+                                       struct vcoproc_instance *vcoproc)
 {
     if ( !vcoproc )
         return true;
@@ -346,7 +348,8 @@ static void s_timer_fn(void *data)
     vcoproc_schedule(sched);
 }
 
-struct vcoproc_scheduler * __init vcoproc_scheduler_init(struct mcoproc_device *mcoproc)
+struct vcoproc_scheduler * __init
+vcoproc_scheduler_init(struct mcoproc_device *mcoproc)
 {
     struct vcoproc_scheduler *sched;
     struct vcoproc_schedule_data *sched_data;

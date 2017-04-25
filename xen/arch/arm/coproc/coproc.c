@@ -33,8 +33,6 @@
 static LIST_HEAD(coprocs);
 /* to protect both operations with the coproc and global coprocs list here */
 static DEFINE_SPINLOCK(coprocs_lock);
-/* the number of registered coproc devices */
-static int num_coprocs;
 
 void vcoproc_continue_running(struct vcoproc_instance *same)
 {
@@ -69,9 +67,9 @@ out:
     return found ? coproc : NULL;
 }
 
-static struct vcoproc_instance *coproc_init_vcoproc(struct domain *d,
-                                                    struct mcoproc_device *mcoproc,
-                                                    const struct dt_device_node *np_vcoproc)
+static struct vcoproc_instance *
+coproc_init_vcoproc(struct domain *d, struct mcoproc_device *mcoproc,
+                    const struct dt_device_node *np_vcoproc)
 {
     struct vcoproc_instance *vcoproc;
     int ret = 0;
@@ -95,7 +93,8 @@ static struct vcoproc_instance *coproc_init_vcoproc(struct domain *d,
     if ( vcoproc->num_mmios != mcoproc->num_mmios )
     {
         printk("MMIO num mistmatch for \"%s\", %u vs %u\n",
-               dt_node_full_name(np_vcoproc), vcoproc->num_mmios, mcoproc->num_mmios);
+               dt_node_full_name(np_vcoproc), vcoproc->num_mmios,
+               mcoproc->num_mmios);
         ret = -ENODEV;
         goto out;
     }
@@ -109,12 +108,13 @@ static struct vcoproc_instance *coproc_init_vcoproc(struct domain *d,
         goto out;
     }
 
-    for ( i =0; vcoproc->num_mmios > i; i++)
+    for ( i = 0; vcoproc->num_mmios > i; i++ )
     {
         struct mcoproc_mmio *m_mmio = &mcoproc->mmios[i];
         struct pcoproc_mmio *p_mmio = m_mmio->p_mmio;
         u64 size;
-        int index = dt_property_match_string(np_vcoproc, "reg-names", p_mmio->name);
+        int index = dt_property_match_string(np_vcoproc, "reg-names",
+                                             p_mmio->name);
 
         vcoproc->mmios[i].vcoproc = vcoproc;
 
@@ -135,11 +135,11 @@ static struct vcoproc_instance *coproc_init_vcoproc(struct domain *d,
                                     &size);
         if ( ret )
         {
-            printk(XENLOG_ERR "Unable to retrieve address %u for %s\n",
+            printk("Unable to retrieve address %u for %s\n",
                    0, dev_path(mcoproc->dev));
             goto out;
         }
-        if (size != m_mmio->size)
+        if ( size != m_mmio->size )
         {
             printk("MMIO size mistmatch for \"%s\"\n",
                    dt_node_full_name(np_vcoproc));
@@ -147,8 +147,9 @@ static struct vcoproc_instance *coproc_init_vcoproc(struct domain *d,
             goto out;
         }
         vcoproc->mmios[i].m_mmio = m_mmio;
-        printk("Register MMIO handler: domain %d, vcoproc %s, addr %"PRIX64", size %"PRIX64"\n", 
-               vcoproc->domain->domain_id, dt_node_full_name(np_vcoproc), vcoproc->mmios[i].addr, size);
+        printk("Register MMIO handler: domain %d, vcoproc %s, addr %"PRIX64", "
+               "size %"PRIX64"\n", vcoproc->domain->domain_id,
+               dt_node_full_name(np_vcoproc), vcoproc->mmios[i].addr, size);
         register_mmio_handler(vcoproc->domain,
                               p_mmio->ops,
                               vcoproc->mmios[i].addr,
@@ -253,15 +254,15 @@ static int vcoproc_make_node(const struct domain *d, void *fdt,
 {
     const struct dt_property *cprop, *vprop;
     const char *name, *path;
-    int res = 0;
+    int ret = 0;
 
     path = dt_node_full_name(vnode);
     name = strrchr(path, '/');
     name = name ? name + 1 : path;
 
-    res = fdt_begin_node(fdt, name);
-    if ( res )
-        return res;
+    ret = fdt_begin_node(fdt, name);
+    if ( ret )
+        return ret;
 
     /*
      * Run through the coproc's properties,
@@ -279,11 +280,12 @@ static int vcoproc_make_node(const struct domain *d, void *fdt,
             continue;
 
         /* Copy interrupts from the real coproc solely*/
-        if ( dt_property_name_is_equal(cprop, "interrupts") || dt_property_name_is_equal(cprop, "interrupt-names") )
+        if ( dt_property_name_is_equal(cprop, "interrupts")
+             || dt_property_name_is_equal(cprop, "interrupt-names") )
         {
-            res = fdt_property(fdt, cprop->name, prop_data, prop_len);
-            if ( res )
-                return res;
+            ret = fdt_property(fdt, cprop->name, prop_data, prop_len);
+            if ( ret )
+                return ret;
             continue;
         }
 
@@ -296,26 +298,26 @@ static int vcoproc_make_node(const struct domain *d, void *fdt,
             }
         }
 
-        res = fdt_property(fdt, cprop->name, prop_data, prop_len);
-        if ( res )
-            return res;
+        ret = fdt_property(fdt, cprop->name, prop_data, prop_len);
+        if ( ret )
+            return ret;
     }
 
-    res = fdt_end_node(fdt);
+    ret = fdt_end_node(fdt);
 
     dprintk(XENLOG_INFO, "Created vcoproc node \"%s\"\n", name);
-    return res;
+    return ret;
 }
 
 int vcoproc_handle_node(struct domain *d, void *fdt,
                               const struct dt_device_node *node)
 {
-    int res;
+    int ret;
     const char *path;
     const struct dt_device_node *cnode;
 
-    res = dt_property_read_string(node, "xen,vcoproc", &path);
-    if ( res )
+    ret = dt_property_read_string(node, "xen,vcoproc", &path);
+    if ( ret )
     {
         printk("Node is not a vcoproc description node\n");
         return -EINVAL;
@@ -332,21 +334,21 @@ int vcoproc_handle_node(struct domain *d, void *fdt,
         path = dt_node_full_name(cnode);
     }
 
-    res = vcoproc_spawn_path(d, path, node);
-    if ( res )
-        return res;
+    ret = vcoproc_spawn_path(d, path, node);
+    if ( ret )
+        return ret;
 
-    if (fdt != NULL)
-        res = vcoproc_make_node(d, fdt, cnode, node);
+    if ( fdt != NULL )
+        ret = vcoproc_make_node(d, fdt, cnode, node);
 
-    return res;
+    return ret;
 }
 
 static int vcoproc_browse_node(struct domain *d,
                                const struct dt_device_node *node)
 {
     struct dt_device_node *child;
-    int res = 0;
+    int ret;
 
     if ( dt_device_is_vcoproc(node) )
     {
@@ -355,9 +357,9 @@ static int vcoproc_browse_node(struct domain *d,
 
     for ( child = node->child; child != NULL; child = child->sibling )
     {
-        res = vcoproc_browse_node(d, child);
-        if ( res )
-            return res;
+        ret = vcoproc_browse_node(d, child);
+        if ( ret )
+            return ret;
     }
 
     return 0;
@@ -405,7 +407,7 @@ static int mcoproc_acquire_mmios(struct mcoproc_device *mcoproc,
 {
     int i;
     int ret = 0;
-    unsigned int num_mmios;
+    u32 num_mmios;
     struct dt_device_node *np = dev_to_dt(mcoproc->dev);
 
     num_mmios = dt_number_of_address(np);
@@ -525,7 +527,8 @@ static int mcoproc_acquire_irqs(struct mcoproc_device *mcoproc,
     {
         struct pcoproc_irq *p_irq = &desc->p_irq[i];
         struct mcoproc_irq *m_irq = &mcoproc->irqs[i];
-        int index = dt_property_match_string(np, "interrupt-names", p_irq->name);
+        int index = dt_property_match_string(np, "interrupt-names",
+                                             p_irq->name);
         int irq;
 
         if (index < 0)
@@ -676,6 +679,13 @@ int coproc_do_domctl(struct xen_domctl *domctl, struct domain *d,
         }
 
         fdt = xmalloc_bytes(domctl->u.attach_coproc.size);
+
+        if ( !fdt )
+        {
+            ret = -ENOMEM;
+            break;
+        }
+
         ret = copy_from_guest(fdt, domctl->u.attach_coproc.fdt,
                               domctl->u.attach_coproc.size);
 
@@ -689,12 +699,20 @@ int coproc_do_domctl(struct xen_domctl *domctl, struct domain *d,
                 domctl->u.attach_coproc.size, d->domain_id);
 
         raw = dt_unflatten_device_tree(fdt, &pdt);
-        ret = vcoproc_browse_node(d, pdt);
-        if ( ret )
-            printk("Failed to attach vcoprocs from pfdt to dom%u (%d)\n",
-                   d->domain_id, ret);
+
+        if ( raw )
+        {
+            ret = vcoproc_browse_node(d, pdt);
+            if ( ret )
+                printk("Failed to attach vcoprocs from pfdt to dom%u (%d)\n",
+                       d->domain_id, ret);
+            xfree(raw);
+        }
+        else
+            ret = -ENOMEM;
+
         xfree(fdt);
-        xfree(raw);
+
         break;
 
     default:
@@ -719,10 +737,10 @@ int __init coproc_register(struct mcoproc_device *mcoproc)
 
     spin_lock(&coprocs_lock);
     list_add_tail(&mcoproc->coproc_elem, &coprocs);
-    num_coprocs++;
     spin_unlock(&coprocs_lock);
 
-    dprintk(XENLOG_INFO, "Registered new coproc \"%s\"\n", dev_path(mcoproc->dev));
+    dprintk(XENLOG_INFO, "Registered new coproc \"%s\"\n",
+            dev_path(mcoproc->dev));
 
     return 0;
 }

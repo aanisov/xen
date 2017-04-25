@@ -7,7 +7,7 @@
  * with another coprocessor.
  *
  * Andrii Anisov <Andrii_Anisov@epam.com>
- * Copyright (C) 2016 EPAM Systems Inc.
+ * Copyright (C) 2017 EPAM Systems Inc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -66,8 +66,7 @@ static struct pcoproc_mmio coproc_xxc_mmio[] = {
     },
 };
 
-enum COPROC_XXC_IRQ
-{
+enum {
     COPROC_XXC_OP = 0,
     COPROC_XXC_MMU
 };
@@ -84,9 +83,9 @@ static struct pcoproc_irq coproc_xxc_irq[] = {
 };
 
 static const struct pcoproc_desc coproc_xxc_desc = {
-    .p_mmio_num = sizeof(coproc_xxc_mmio)/sizeof(struct pcoproc_mmio),
+    .p_mmio_num = ARRAY_SIZE(coproc_xxc_mmio),
     .p_mmio = coproc_xxc_mmio,
-    .p_irq_num = sizeof(coproc_xxc_irq)/sizeof(struct pcoproc_irq),
+    .p_irq_num = ARRAY_SIZE(coproc_xxc_irq),
     .p_irq = coproc_xxc_irq,
 };
 
@@ -95,10 +94,11 @@ static int vcoproc_xxc_op_write(struct vcpu *v, mmio_info_t *info, register_t r,
 {
     struct vcoproc_mmio *mmio = priv;
     struct vcoproc_rw_context ctx;
+    struct mcoproc_device *mcoproc;
 
     vcoproc_get_rw_context(v->domain, mmio, info, &ctx);
-    COPROC_DEBUG(ctx.vcoproc->mcoproc->dev,
-                 "domain %u, write r%d=%"PRIregister \
+    mcoproc = ctx.vcoproc->mcoproc;
+    COPROC_DEBUG(mcoproc->dev, "domain %u, write r%d=%"PRIregister
                  " offset %#08x base %#08x name %s\n",
                  v->domain->domain_id, ctx.dabt.reg, r, ctx.offset,
                  (uint32_t)mmio->addr, mmio->m_mmio->p_mmio->name?:"NONAME");
@@ -110,13 +110,11 @@ static int vcoproc_xxc_op_write(struct vcpu *v, mmio_info_t *info, register_t r,
     {
         int i;
 
-        /* Look for MMU irq to inject */
-        for ( i = 0; i < ctx.vcoproc->mcoproc->num_irqs; i++ )
-            if ( ctx.vcoproc->mcoproc->irqs[i].p_irq ==
-                 &coproc_xxc_irq[COPROC_XXC_OP] )
+        /* Look for OP irq to inject */
+        for ( i = 0; i < mcoproc->num_irqs; i++ )
+            if ( mcoproc->irqs[i].p_irq == &coproc_xxc_irq[COPROC_XXC_OP] )
             {
-                vgic_vcpu_inject_spi(ctx.vcoproc->domain,
-                                 ctx.vcoproc->mcoproc->irqs[i].irq);
+                vgic_vcpu_inject_spi(ctx.vcoproc->domain, mcoproc->irqs[i].irq);
                 break;
             }
     }
@@ -132,10 +130,11 @@ static int vcoproc_xxc_mmu_write(struct vcpu *v, mmio_info_t *info,
 {
     struct vcoproc_mmio *mmio = priv;
     struct vcoproc_rw_context ctx;
+    struct mcoproc_device *mcoproc;
 
     vcoproc_get_rw_context(v->domain, mmio, info, &ctx);
-    COPROC_DEBUG(ctx.vcoproc->mcoproc->dev,
-                 "domain %u, write r%d=%"PRIregister
+    mcoproc = ctx.vcoproc->mcoproc;
+    COPROC_DEBUG(mcoproc->dev, "domain %u, write r%d=%"PRIregister
                  " offset %#08x base %#08x name %s\n",
                  v->domain->domain_id, ctx.dabt.reg, r, ctx.offset,
                  (uint32_t)mmio->addr, mmio->m_mmio->p_mmio->name?:"NONAME");
@@ -148,12 +147,10 @@ static int vcoproc_xxc_mmu_write(struct vcpu *v, mmio_info_t *info,
         int i;
 
         /* Look for MMU irq to inject */
-        for ( i = 0; i < ctx.vcoproc->mcoproc->num_irqs; i++ )
-            if ( ctx.vcoproc->mcoproc->irqs[i].p_irq ==
-                 &coproc_xxc_irq[COPROC_XXC_MMU] )
+        for ( i = 0; i < mcoproc->num_irqs; i++ )
+            if ( mcoproc->irqs[i].p_irq == &coproc_xxc_irq[COPROC_XXC_MMU] )
             {
-                vgic_vcpu_inject_spi(ctx.vcoproc->domain,
-                                 ctx.vcoproc->mcoproc->irqs[i].irq);
+                vgic_vcpu_inject_spi(ctx.vcoproc->domain, mcoproc->irqs[i].irq);
                 break;
             }
     }
@@ -173,23 +170,20 @@ static int coproc_xxc_dt_probe(struct dt_device_node *np)
     coproc_xxc = coproc_alloc(np,  &coproc_xxc_desc, &vcoproc_xxx_vcoproc_ops);
     if ( IS_ERR_OR_NULL(coproc_xxc) )
     {
-        COPROC_DEBUG(dev, "failed to allocate coproc xxc\n");
         ret = PTR_ERR(coproc_xxc);
-        goto out;
+        COPROC_DEBUG(dev, "failed to allocate coproc xxc (%d)\n", ret);
+        return ret;
     }
 
     ret = coproc_register(coproc_xxc);
     if ( ret )
     {
         COPROC_DEBUG(dev, "failed to register coproc xxc (%d)\n", ret);
-        goto out;
+        coproc_release(coproc_xxc);
+        return ret;
     }
 
     return 0;
-
-out:
-    coproc_release(coproc_xxc);
-    return ret;
 }
 
 static const struct dt_device_match coproc_xxc_dt_match[] __initconst =
@@ -200,15 +194,10 @@ static const struct dt_device_match coproc_xxc_dt_match[] __initconst =
 
 static __init int coproc_xxc_init(struct dt_device_node *np, const void *data)
 {
-    int ret;
     /*TODO: Decide should we still need used by DOMID_XEN */
     dt_device_set_used_by(np, DOMID_XEN);
 
-    ret = coproc_xxc_dt_probe(np);
-    if ( ret )
-        return ret;
-
-    return 0;
+    return coproc_xxc_dt_probe(np);
 }
 
 DT_DEVICE_START(coproc_xxc, "COPROC_XXC", DEVICE_COPROC)

@@ -23,13 +23,11 @@
 #include "../../coproc.h"
 #include "../common.h"
 
-int vcoproc_xxx_read(struct vcpu *v, mmio_info_t *info, register_t *r,
-                     void *priv);
+int vcoproc_xxx_read(struct vcpu *, mmio_info_t *, register_t *, void *);
 
-int vcoproc_xxx_write(struct vcpu *v, mmio_info_t *info, register_t r,
-                      void *priv);
+int vcoproc_xxx_write(struct vcpu *, mmio_info_t *, register_t, void *);
 
-void coproc_xxx_irq_handler(int irq, void *dev, struct cpu_user_regs *regs);
+void coproc_xxx_irq_handler(int, void *, struct cpu_user_regs *);
 
 #endif /* __ARCH_ARM_COPROC_PLAT_COPROC_XXX_H__ */
 
