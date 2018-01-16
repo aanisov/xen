@@ -1297,6 +1297,8 @@ long arch_memory_op(int op, XEN_GUEST_HANDLE_PARAM(void) arg)
         struct xen_p2m_lookup req;
         struct domain *d;
         int rc;
+        //int i;
+        uint64_t cur_ns;
 
         if ( copy_from_guest(&req, arg, 1) )
             return -EFAULT;
@@ -1308,6 +1310,8 @@ long arch_memory_op(int op, XEN_GUEST_HANDLE_PARAM(void) arg)
         if ( d == NULL )
             return -ESRCH;
 
+        cur_ns = NOW();
+#if 1
         if ( likely (req.num_frames <= FRAMES_ON_STACK) )
         {
             /* more than 95% cases for GSX operation */
@@ -1331,6 +1335,69 @@ long arch_memory_op(int op, XEN_GUEST_HANDLE_PARAM(void) arg)
                 xfree(pma);
             }
         }
+#else
+        for ( i = 0; i < req.num_frames; i++ )
+        {
+            xen_pfn_t pa, ma;
+
+            if ( unlikely(copy_from_guest_offset(&pa, req.pa, i, 1)) )
+            {
+                rcu_unlock_domain(d);
+                return -EFAULT;
+            }
+
+            ma = pfn_to_paddr(mfn_x(p2m_lookup(d, _gfn(paddr_to_pfn(pa)), NULL)));
+
+            if ( unlikely(copy_to_guest_offset(req.ma, i, &ma, 1)) )
+            {
+                rcu_unlock_domain(d);
+                return -EFAULT;
+            }
+        }
+#endif
+        cur_ns = NOW() - cur_ns;
+
+#if 1
+        {
+            static int entries=0;
+            static int tot_fr=0;
+            static uint64_t tot_ns;
+            static int c1 = 0;
+            static int c10 = 0;
+            static int c100 = 0;
+            static int c1000 = 0;
+            static int c2000 = 0;
+            static int large = 0;
+            static int c32 = 0;
+
+            entries++;
+//            printk ("^%d^\n", req.num_frames);
+            tot_fr += req.num_frames;
+            tot_ns += cur_ns;
+
+            if (req.num_frames <= 32)
+                c32++;
+
+             if (req.num_frames == 1)
+                c1++;
+            else {
+                if (req.num_frames <= 10)
+                    c10++;
+                else if (req.num_frames <= 100)
+                    c100++;
+                else if (req.num_frames <= 1000)
+                    c1000++;
+                else if (req.num_frames <= 2000)
+                    c2000++;
+                else
+                    large++;
+                printk("%d in %"PRI_stime" total %d/%d in %"PRI_stime" c32 %d\n",
+                       req.num_frames, cur_ns, tot_fr, entries, tot_ns, c32);
+                //printk("%d/%d/%d/%d/%d/%d (%d)\n", c1, c10, c100, c1000, c2000, large, entries);
+            }
+        }
+#endif
+
         rcu_unlock_domain(d);
         return rc;
     }
