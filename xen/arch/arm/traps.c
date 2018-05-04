@@ -2086,6 +2086,8 @@ static void enter_hypervisor_head(struct cpu_user_regs *regs)
 {
     if ( guest_mode(regs) )
     {
+        current->real_stop_time = NOW();
+        current->real_time += current->real_stop_time - current->real_start_time;
         /*
          * If we pended a virtual abort, preserve it until it gets cleared.
          * See ARM ARM DDI 0487A.j D1.14.3 (Virtual Interrupts) for details,
@@ -2099,7 +2101,7 @@ static void enter_hypervisor_head(struct cpu_user_regs *regs)
     }
 }
 
-void do_trap_guest_sync(struct cpu_user_regs *regs)
+static void __do_trap_guest_sync(struct cpu_user_regs *regs)
 {
     const union hsr hsr = { .bits = regs->hsr };
 
@@ -2227,6 +2229,14 @@ void do_trap_guest_sync(struct cpu_user_regs *regs)
     }
 }
 
+void do_trap_guest_sync(struct cpu_user_regs *regs)
+{
+    __do_trap_guest_sync(regs);
+
+    if ( guest_mode(regs) )
+        current->sync_time += NOW() - current->real_stop_time;
+}
+
 void do_trap_hyp_sync(struct cpu_user_regs *regs)
 {
     const union hsr hsr = { .bits = regs->hsr };
@@ -2265,6 +2275,7 @@ void do_trap_hyp_sync(struct cpu_user_regs *regs)
                hsr.bits, hsr.ec, hsr.len, hsr.iss);
         do_unexpected_trap("Hypervisor", regs);
     }
+    current->sync_time += NOW() - current->real_stop_time;
 }
 
 void do_trap_hyp_serror(struct cpu_user_regs *regs)
@@ -2285,12 +2296,18 @@ void do_trap_irq(struct cpu_user_regs *regs)
 {
     enter_hypervisor_head(regs);
     gic_interrupt(regs, 0);
+
+    if ( guest_mode(regs) )
+        current->irq_time += NOW() - current->real_stop_time;
 }
 
 void do_trap_fiq(struct cpu_user_regs *regs)
 {
     enter_hypervisor_head(regs);
     gic_interrupt(regs, 1);
+
+    if ( guest_mode(regs) )
+        current->irq_time += NOW() - current->real_stop_time;
 }
 
 void leave_hypervisor_tail(void)
@@ -2313,6 +2330,8 @@ void leave_hypervisor_tail(void)
              */
             SYNCHRONIZE_SERROR(SKIP_SYNCHRONIZE_SERROR_ENTRY_EXIT);
 
+            current->real_start_time = NOW();
+            current->before_time += current->real_start_time - current->runstate.state_entry_time;
             return;
         }
         local_irq_enable();
