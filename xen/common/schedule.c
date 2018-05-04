@@ -1507,6 +1507,7 @@ static void schedule(void)
     lock = pcpu_schedule_lock_irq(cpu);
 
     now = NOW();
+    current->after_time += now - current->real_stop_time;
 
     stop_timer(&sd->s_timer);
 
@@ -1515,6 +1516,7 @@ static void schedule(void)
     next_slice = sched->do_schedule(sched, now, tasklet_work_scheduled);
 
     next = next_slice.task;
+    next->schedule_run_time = now;
 
     sd->curr = next;
 
@@ -1565,6 +1567,7 @@ static void schedule(void)
     ASSERT(!next->is_running);
     next->is_running = 1;
 
+    current->schedule_time += NOW() - now;
     pcpu_schedule_unlock_irq(lock, cpu);
 
     SCHED_STAT_CRANK(sched_ctx);
