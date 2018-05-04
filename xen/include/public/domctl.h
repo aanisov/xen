@@ -265,6 +265,12 @@ struct xen_domctl_getvcpuinfo {
     uint8_t  blocked;                 /* blocked waiting for an event? */
     uint8_t  running;                 /* currently scheduled on its CPU? */
     uint64_aligned_t cpu_time;        /* total cpu time consumed (ns) */
+    uint64_aligned_t run_time;        /* raw vcpu run time in EL<2 (ns) */
+    uint64_aligned_t sync_time;       /* vcpu sync exceptions servicing time (ns) */
+    uint64_aligned_t irq_time;        /* irq servicing time taken from this vcpu (ns) */
+    uint64_aligned_t schedule_time;        /* schedule servicing time taken from this vcpu (ns) */
+    uint64_aligned_t before_time;        /* schedule servicing time taken from this vcpu (ns) */
+    uint64_aligned_t after_time;        /* schedule servicing time taken from this vcpu (ns) */
     uint32_t cpu;                     /* current mapping   */
 };
 

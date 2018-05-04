@@ -1244,6 +1244,12 @@ libxl_vcpuinfo *libxl_list_vcpu(libxl_ctx *ctx, uint32_t domid,
         ptr->blocked = !!vcpuinfo.blocked;
         ptr->running = !!vcpuinfo.running;
         ptr->vcpu_time = vcpuinfo.cpu_time;
+        ptr->run_time = vcpuinfo.run_time;
+        ptr->sync_time = vcpuinfo.sync_time;
+        ptr->irq_time = vcpuinfo.irq_time;
+        ptr->schedule_time = vcpuinfo.schedule_time;
+        ptr->before_time = vcpuinfo.before_time;
+        ptr->after_time = vcpuinfo.after_time;
     }
     GC_FREE;
     return ret;

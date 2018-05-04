@@ -43,7 +43,13 @@ static void print_vcpuinfo(uint32_t tdomid,
                vcpuinfo->blocked ? 'b' : '-');
     }
     /*      TIM */
-    printf("%9.1f  ", ((float)vcpuinfo->vcpu_time / 1e9));
+    printf("%12.1f  ", ((float)vcpuinfo->vcpu_time / 1e6));
+    printf("%12.1f ", ((float)vcpuinfo->run_time / 1e6));
+    printf("%12.1f ", ((float)vcpuinfo->sync_time / 1e6));
+    printf("%12.1f ", ((float)vcpuinfo->irq_time / 1e6));
+    printf("%12.1f ", ((float)vcpuinfo->schedule_time / 1e6));
+    printf("%12.1f ", ((float)vcpuinfo->before_time / 1e6));
+    printf("%12.1f ", ((float)vcpuinfo->after_time / 1e6));
     /* CPU HARD AND SOFT AFFINITY */
     print_bitmap(vcpuinfo->cpumap.map, nr_cpus, stdout);
     printf(" / ");
@@ -79,9 +85,9 @@ static void vcpulist(int argc, char **argv)
         goto vcpulist_out;
     }
 
-    printf("%-32s %5s %5s %5s %5s %9s %s\n",
+    printf("%-32s %5s %5s %5s %5s %12s %12s %12s %12s %12s %12s %12s %s\n",
            "Name", "ID", "VCPU", "CPU", "State", "Time(s)",
-           "Affinity (Hard / Soft)");
+           "Real run", "SYNC", "IRQ", "SCHEDULE", "BEFORE", "AFTER", "Affinity (Hard / Soft)");
     if (!argc) {
         if (!(dominfo = libxl_list_domain(ctx, &nb_domain))) {
             fprintf(stderr, "libxl_list_domain failed.\n");
