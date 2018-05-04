@@ -175,6 +175,16 @@ struct vcpu
     /* last time when vCPU is scheduled out */
     uint64_t last_run_time;
 
+    uint64_t real_start_time;
+    uint64_t real_stop_time;
+    uint64_t real_time;
+    uint64_t schedule_run_time;
+    uint64_t schedule_time;
+    uint64_t irq_time;
+    uint64_t sync_time;
+    uint64_t before_time;
+    uint64_t after_time;
+
     /* Has the FPU been initialised? */
     bool             fpu_initialised;
     /* Has the FPU been used since it was last saved? */

@@ -917,6 +917,17 @@ long do_domctl(XEN_GUEST_HANDLE_PARAM(xen_domctl_t) u_domctl)
         op->u.getvcpuinfo.blocked  = !!(v->pause_flags & VPF_blocked);
         op->u.getvcpuinfo.running  = v->is_running;
         op->u.getvcpuinfo.cpu_time = runstate.time[RUNSTATE_running];
+        op->u.getvcpuinfo.run_time = v->real_time;
+        op->u.getvcpuinfo.sync_time = v->sync_time;
+        op->u.getvcpuinfo.irq_time = v->irq_time;
+        op->u.getvcpuinfo.schedule_time = v->schedule_time;
+        op->u.getvcpuinfo.before_time = v->before_time;
+        op->u.getvcpuinfo.after_time = v->after_time;
+#if 0
+        printk(XENLOG_ERR
+           "d%dv%d: run time: %lu, sync_time: %lu, irq_time: %lu\n",
+           d->domain_id, v->vcpu_id, v->real_time, v->sync_time, v->irq_time);
+#endif
         op->u.getvcpuinfo.cpu      = v->processor;
         ret = 0;
         copyback = 1;
