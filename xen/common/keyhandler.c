@@ -25,7 +25,7 @@ static unsigned char keypress_key;
 static bool_t alt_key_handling;
 
 static keyhandler_fn_t show_handlers, dump_hwdom_registers,
-    dump_domains, read_clocks;
+    dump_domains, read_clocks, reset_vcpu_time;
 static irq_keyhandler_fn_t do_toggle_alt_key, dump_registers,
     reboot_machine, run_all_keyhandlers, do_debug_key;
 
@@ -52,6 +52,7 @@ static struct keyhandler {
     IRQ_KEYHANDLER('d', dump_registers, "dump registers", 1),
         KEYHANDLER('h', show_handlers, "show this message", 0),
         KEYHANDLER('q', dump_domains, "dump domain (and guest debug) info", 1),
+        KEYHANDLER('z', reset_vcpu_time, "reset vcpu times", 1),
         KEYHANDLER('r', dump_runq, "dump run queues", 1),
     IRQ_KEYHANDLER('R', reboot_machine, "reboot machine", 0),
         KEYHANDLER('t', read_clocks, "display multi-cpu clock info", 1),
@@ -373,6 +374,28 @@ static void dump_domains(unsigned char key)
 
     rcu_read_unlock(&domlist_read_lock);
 #undef tmpstr
+}
+
+static void reset_vcpu_time(unsigned char key)
+{
+    struct domain *d;
+    struct vcpu   *v;
+
+    printk("zeroing vcpu time values\n");
+    for_each_domain ( d )
+    {
+        for_each_vcpu ( d, v )
+        {
+            v->runstate.time[0] = 0;
+            v->real_time = 0;
+            v->irq_time = 0;
+            v->sync_time = 0;
+            v->before_time = 0;
+            v->after_time = 0;
+            v->after_time = 0;
+            v->schedule_time = 0;
+        }
+    }
 }
 
 static cpumask_t read_clocks_cpumask;
