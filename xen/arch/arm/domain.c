@@ -61,6 +61,8 @@ static void do_idle(void)
         ticks_passed = get_ticks() - ticks_before;
         if (ticks_passed > 1)
             this_cpu(idle_time) += ticks_to_ns(ticks_passed);
+        else
+            perfc_incr(one_tick_wfi);
     }
     local_irq_enable();
 
