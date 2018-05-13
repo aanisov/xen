@@ -20,12 +20,13 @@
 #include <xen/init.h>
 #include <asm/debugger.h>
 #include <asm/div64.h>
+#include <xen/sched-if.h>
 
 static unsigned char keypress_key;
 static bool_t alt_key_handling;
 
 static keyhandler_fn_t show_handlers, dump_hwdom_registers,
-    dump_domains, read_clocks, reset_vcpu_time;
+    dump_domains, read_clocks, reset_vcpu_time, show_cpu_idle_time;
 static irq_keyhandler_fn_t do_toggle_alt_key, dump_registers,
     reboot_machine, run_all_keyhandlers, do_debug_key;
 
@@ -52,6 +53,7 @@ static struct keyhandler {
     IRQ_KEYHANDLER('d', dump_registers, "dump registers", 1),
         KEYHANDLER('h', show_handlers, "show this message", 0),
         KEYHANDLER('q', dump_domains, "dump domain (and guest debug) info", 1),
+        KEYHANDLER('i', show_cpu_idle_time, "show summary of cpu idle time", 1),
         KEYHANDLER('z', reset_vcpu_time, "reset vcpu times", 1),
         KEYHANDLER('r', dump_runq, "dump run queues", 1),
     IRQ_KEYHANDLER('R', reboot_machine, "reboot machine", 0),
@@ -394,6 +396,17 @@ static void reset_vcpu_time(unsigned char key)
             v->after_time = 0;
             v->schedule_time = 0;
         }
+    }
+}
+
+static void show_cpu_idle_time(unsigned char key)
+{
+    unsigned int cpu;
+
+    printk("CPU     IDLE TIME(ms)\n");
+    for_each_cpu(cpu,&cpu_online_map)
+    {
+        printk("[%u]\t%"PRIu64"ms\n", cpu, per_cpu(idle_time, cpu)/1000000);
     }
 }
 
