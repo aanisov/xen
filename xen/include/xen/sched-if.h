@@ -47,6 +47,7 @@ struct schedule_data {
 DECLARE_PER_CPU(struct schedule_data, schedule_data);
 DECLARE_PER_CPU(struct scheduler *, scheduler);
 DECLARE_PER_CPU(struct cpupool *, cpupool);
+DECLARE_PER_CPU(s_time_t, idle_time);
 
 /*
  * Scratch space, for avoiding having too many cpumask_t on the stack.
