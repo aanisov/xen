@@ -75,6 +75,8 @@ PERFCOUNTER(maintenance_irqs, "Maintenance interrupts")
 
 PERFCOUNTER(foreign_irqs, "Foreign interrupts")
 PERFCOUNTER(neighbor_irqs, "Neighbor interrupts")
+PERFCOUNTER(migrating_irq, "Migrating IRQ")
+
 
 PERFCOUNTER(one_tick_wfi, "One tick wfis")
 /*#endif*/ /* __XEN_PERFC_DEFN_H__ */

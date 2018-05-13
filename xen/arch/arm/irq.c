@@ -231,6 +231,9 @@ void do_IRQ(struct cpu_user_regs *regs, unsigned int irq, int is_fiq)
 
             if (v != current)
             {
+                if (v->is_running)
+                    perfc_incr(migrating_irq);
+
                 if (v->domain == current->domain)
                     perfc_incr(neighbor_irqs);
                 else
