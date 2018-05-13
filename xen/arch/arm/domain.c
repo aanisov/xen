@@ -19,6 +19,7 @@
 #include <xen/sched.h>
 #include <xen/softirq.h>
 #include <xen/wait.h>
+#include <xen/sched-if.h>
 
 #include <asm/alternative.h>
 #include <asm/cpufeature.h>
@@ -39,6 +40,8 @@
 #include "coproc/coproc.h"
 
 DEFINE_PER_CPU(struct vcpu *, curr_vcpu);
+DEFINE_PER_CPU(s_time_t, idle_time);
+
 
 static void do_idle(void)
 {
@@ -51,8 +54,13 @@ static void do_idle(void)
     local_irq_disable();
     if ( cpu_is_haltable(cpu) )
     {
+        uint64_t ticks_before = get_ticks();
+        uint64_t ticks_passed;
         dsb(sy);
         wfi();
+        ticks_passed = get_ticks() - ticks_before;
+        if (ticks_passed > 1)
+            this_cpu(idle_time) += ticks_to_ns(ticks_passed);
     }
     local_irq_enable();
 
