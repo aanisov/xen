@@ -224,7 +224,38 @@ void do_IRQ(struct cpu_user_regs *regs, unsigned int irq, int is_fiq)
         /*
          * The irq cannot be a PPI, we only support delivery of SPIs to
          * guests.
-	 */
+         */
+
+/*
+ * In order to have some statistics of throwing IRQs to other VCPUs we are
+ * counting following types of IRQs:
+ *  - Neighbor  - IRQs for this domain, but the other VCPU
+ *  - Foreign   - IRQs for the other domain
+ * Orthogonal types are:
+ *  - Hot   - IRQs for the VCPU being running on another PCPU
+ *  - Cold  - IRQs for the VCPU not being running on another PCPU
+ *
+ * Throwing the IRQ from the idle VCPU only impacts IRQ latency, so we do not
+ * care about them now.
+ */
+        if (!is_idle_vcpu(current))
+        {
+            struct vcpu *v = vgic_get_target_vcpu(info->d->vcpu[0], info->virq);
+            if (v != current)
+            {
+                if (v->is_running)
+                    if (v->domain == current->domain)
+                        perfc_incr(hot_neighbor_irqs);
+                    else
+                        perfc_incr(hot_foreign_irqs);
+                else
+                    if (v->domain == current->domain)
+                        perfc_incr(cold_neighbor_irqs);
+                    else
+                        perfc_incr(cold_foreign_irqs);
+            }
+        }
+
         vgic_inject_irq(info->d, NULL, info->virq, true);
         goto out_no_end;
     }
