@@ -224,7 +224,19 @@ void do_IRQ(struct cpu_user_regs *regs, unsigned int irq, int is_fiq)
         /*
          * The irq cannot be a PPI, we only support delivery of SPIs to
          * guests.
-	 */
+         */
+        if (!is_idle_vcpu(current))
+        {
+            struct vcpu *v = vgic_get_target_vcpu(info->d->vcpu[0], info->virq);
+
+            if (v != current)
+            {
+                if (v->domain == current->domain)
+                    perfc_incr(neighbor_irqs);
+                else
+                    perfc_incr(foreign_irqs);
+            }
+        }
         vgic_inject_irq(info->d, NULL, info->virq, true);
         goto out_no_end;
     }

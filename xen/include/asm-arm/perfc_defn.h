@@ -73,6 +73,8 @@ PERFCOUNTER(phys_timer_irqs,  "Physical timer interrupts")
 PERFCOUNTER(virt_timer_irqs,  "Virtual timer interrupts")
 PERFCOUNTER(maintenance_irqs, "Maintenance interrupts")
 
+PERFCOUNTER(foreign_irqs, "Foreign interrupts")
+PERFCOUNTER(neighbor_irqs, "Neighbor interrupts")
 /*#endif*/ /* __XEN_PERFC_DEFN_H__ */
 
 /*
