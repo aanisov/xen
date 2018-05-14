@@ -174,6 +174,7 @@ struct vcpu
 
     /* last time when vCPU is scheduled out */
     uint64_t last_run_time;
+    uint64_t next_run_time;
 
     uint64_t real_start_time;
     uint64_t real_stop_time;
