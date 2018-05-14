@@ -33,6 +33,7 @@
 #include <xen/symbols.h>
 #include <xen/version.h>
 #include <xen/virtual_region.h>
+#include <xen/sched-if.h>
 
 #include <public/sched.h>
 #include <public/xen.h>
@@ -2181,7 +2182,12 @@ void do_trap_guest_sync(struct cpu_user_regs *regs)
     __do_trap_guest_sync(regs);
 
     if ( guest_mode(regs) )
-        current->sync_time += NOW() - current->real_stop_time;
+    {
+        s_time_t now = NOW();
+        current->sync_time += now - current->real_stop_time;
+        /*We do charge all sync exceptions from current vcpu budget*/
+        current->real_stop_time = now;
+    }
 }
 
 void do_trap_hyp_sync(struct cpu_user_regs *regs)
@@ -2283,6 +2289,8 @@ void leave_hypervisor_tail(void)
                 current->before_time += current->real_start_time - current->schedule_run_time;
                 current->schedule_run_time = 0;
             }
+            if ( current->next_run_time >= 0 ) /* -ve means no limit */
+                set_timer(&this_cpu(schedule_data).s_timer, current->real_start_time + current->next_run_time);
             return;
         }
         local_irq_enable();

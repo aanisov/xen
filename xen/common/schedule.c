@@ -1519,12 +1519,14 @@ static void schedule(void)
     next->schedule_run_time = now;
 
     sd->curr = next;
+    next->next_run_time = next_slice.time;
 
-    if ( next_slice.time >= 0 ) /* -ve means no limit */
-        set_timer(&sd->s_timer, now + next_slice.time);
+//    if ( next_slice.time >= 0 ) /* -ve means no limit */
+//        set_timer(&sd->s_timer, now + next_slice.time);
 
     if ( unlikely(prev == next) )
     {
+        current->schedule_time += NOW() - now;
         pcpu_schedule_unlock_irq(lock, cpu);
         TRACE_4D(TRC_SCHED_SWITCH_INFCONT,
                  next->domain->domain_id, next->vcpu_id,

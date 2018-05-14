@@ -452,7 +452,7 @@ rt_update_deadline(s_time_t now, struct rt_vcpu *svc)
      * Then rt_update_deadline is called before rt_schedule, which
      * should only deduct the time spent in current period from the budget
      */
-    svc->last_start = now;
+//    svc->last_start = now;
     svc->cur_budget = svc->budget;
     svc->priority_level = 0;
 
@@ -956,7 +956,11 @@ burn_budget(const struct scheduler *ops, struct rt_vcpu *svc, s_time_t now)
         return;
 
     /* burn at nanoseconds level */
-    delta = now - svc->last_start;
+//    delta = now - svc->last_start;
+    delta = svc->vcpu->real_stop_time - svc->vcpu->real_start_time;
+    /*we have counted this time, so keep it zeroed*/
+    svc->vcpu->real_stop_time = 0;
+    svc->vcpu->real_start_time = 0;
     /*
      * delta < 0 only happens in nested virtualization;
      * TODO: how should we handle delta < 0 in a better way?
@@ -965,12 +969,12 @@ burn_budget(const struct scheduler *ops, struct rt_vcpu *svc, s_time_t now)
     {
         printk("%s, ATTENTION: now is behind last_start! delta=%"PRI_stime"\n",
                 __func__, delta);
-        svc->last_start = now;
+//        svc->last_start = now;
         return;
     }
 
     svc->cur_budget -= delta;
-    svc->last_start = now;
+//    svc->last_start = now;
 
     if ( svc->cur_budget <= 0 )
     {
@@ -1117,7 +1121,7 @@ rt_schedule(const struct scheduler *ops, s_time_t now, bool_t tasklet_work_sched
          vcpu_runnable(current) )
         __set_bit(__RTDS_delayed_runq_add, &scurr->flags);
 
-    snext->last_start = now;
+//    snext->last_start = now;
     ret.time =  -1; /* if an idle vcpu is picked */
     if ( !is_idle_vcpu(snext->vcpu) )
     {
