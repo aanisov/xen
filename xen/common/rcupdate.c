@@ -409,8 +409,8 @@ static void __rcu_process_callbacks(struct rcu_ctrlblk *rcp,
 
 static void rcu_process_callbacks(void)
 {
-    BUG_ON(is_idle_vcpu(current));
-    BUG();
+//    BUG_ON(is_idle_vcpu(current));
+//    BUG();
     __rcu_process_callbacks(&rcu_ctrlblk, &__get_cpu_var(rcu_data));
 }
 
