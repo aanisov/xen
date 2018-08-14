@@ -244,7 +244,8 @@ static register_t *select_user_reg(struct cpu_user_regs *regs, int reg)
      */
 #define REGOFFS(R) offsetof(struct cpu_user_regs, R)
 
-    switch ( reg ) {
+    switch ( reg )
+    {
     case 0 ... 7: /* Unbanked registers */
         BUILD_BUG_ON(REGOFFS(r0) + 7*sizeof(register_t) != REGOFFS(r7));
         return &regs->r0 + reg;
@@ -1429,7 +1430,8 @@ static void do_debug_trap(struct cpu_user_regs *regs, unsigned int code)
 {
     uint32_t reg;
     uint32_t domid = current->domain->domain_id;
-    switch ( code ) {
+    switch ( code )
+    {
     case 0xe0 ... 0xef:
         reg = code - 0xe0;
         printk("DOM%d: R%d = 0x%"PRIregister" at 0x%"PRIvaddr"\n",
@@ -2246,7 +2248,8 @@ void leave_hypervisor_tail(void)
     while (1)
     {
         local_irq_disable();
-        if (!softirq_pending(smp_processor_id())) {
+        if (!softirq_pending(smp_processor_id()))
+        {
             vgic_sync_to_lrs();
 
             /*
