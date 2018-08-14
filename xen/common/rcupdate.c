@@ -409,7 +409,12 @@ static void __rcu_process_callbacks(struct rcu_ctrlblk *rcp,
 
 static void rcu_process_callbacks(void)
 {
-    WARN_ON(!is_idle_vcpu(current));
+    if(!is_idle_vcpu(current))
+    {
+        struct domain *d = current->domain;
+        printk("\tRCU on nonidle VCPU, domain %d, dying %d, shutting down %d, shut down %d\n",
+               d->domain_id, d->is_dying, d->is_shutting_down, d->is_shut_down);
+    }
     __rcu_process_callbacks(&rcu_ctrlblk, &__get_cpu_var(rcu_data));
 }
 
