@@ -2046,7 +2046,8 @@ void do_trap_guest_sync(struct cpu_user_regs *regs)
 
     enter_hypervisor_head(regs);
 
-    switch (hsr.ec) {
+    switch (hsr.ec)
+    {
     case HSR_EC_WFI_WFE:
         /*
          * HCR_EL2.TWI, HCR_EL2.TWE
