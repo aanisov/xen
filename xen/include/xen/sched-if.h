@@ -197,6 +197,7 @@ struct scheduler {
 
     void         (*tick_suspend)    (const struct scheduler *, unsigned int);
     void         (*tick_resume)     (const struct scheduler *, unsigned int);
+    void         (*tail)            (void);
 };
 
 static inline void *sched_alloc_domdata(const struct scheduler *s,
