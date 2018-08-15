@@ -39,6 +39,7 @@ extern uint64_t boot_count;
 
 extern s_time_t ticks_to_ns(uint64_t ticks);
 extern uint64_t ns_to_ticks(s_time_t ns);
+extern uint64_t get_ticks(void);
 
 void preinit_xen_time(void);
 
