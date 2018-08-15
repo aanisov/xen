@@ -33,6 +33,7 @@
 #include <xen/symbols.h>
 #include <xen/version.h>
 #include <xen/virtual_region.h>
+#include <xen/sched-if.h>
 
 #include <public/sched.h>
 #include <public/xen.h>
@@ -2015,6 +2016,10 @@ static void enter_hypervisor_head(struct cpu_user_regs *regs)
 {
     if ( guest_mode(regs) )
     {
+        struct tacc *ta = &this_cpu(tacc);
+
+        ta->from_guest = NOW();
+        ta->in_guest += ta->from_guest - ta->to_guest;
         /*
          * If we pended a virtual abort, preserve it until it gets cleared.
          * See ARM ARM DDI 0487A.j D1.14.3 (Virtual Interrupts) for details,
@@ -2040,7 +2045,7 @@ static void enter_hypervisor_head(struct cpu_user_regs *regs)
     }
 }
 
-void do_trap_guest_sync(struct cpu_user_regs *regs)
+static void __do_trap_guest_sync(struct cpu_user_regs *regs)
 {
     const union hsr hsr = { .bits = regs->hsr };
 
@@ -2175,6 +2180,18 @@ void do_trap_guest_sync(struct cpu_user_regs *regs)
     }
 }
 
+void do_trap_guest_sync(struct cpu_user_regs *regs)
+{
+    __do_trap_guest_sync(regs);
+
+    if ( guest_mode(regs) )
+    {
+        struct tacc *ta = &this_cpu(tacc);
+
+        ta->sync_hyp += NOW() - ta->from_guest;
+    }
+}
+
 void do_trap_hyp_sync(struct cpu_user_regs *regs)
 {
     const union hsr hsr = { .bits = regs->hsr };
@@ -2227,6 +2244,13 @@ void do_trap_guest_serror(struct cpu_user_regs *regs)
     enter_hypervisor_head(regs);
 
     __do_trap_serror(regs, true);
+
+    if ( guest_mode(regs) )
+    {
+        struct tacc *ta = &this_cpu(tacc);
+
+        ta->sync_hyp += NOW() - ta->from_guest;
+    }
 }
 
 void do_trap_irq(struct cpu_user_regs *regs)
@@ -2247,6 +2271,7 @@ void leave_hypervisor_tail(void)
     {
         local_irq_disable();
         if (!softirq_pending(smp_processor_id())) {
+            struct tacc *ta = &this_cpu(tacc);
             vgic_sync_to_lrs();
 
             /*
@@ -2260,6 +2285,8 @@ void leave_hypervisor_tail(void)
              * to skip synchronizing SErrors for other SErrors handle options.
              */
             SYNCHRONIZE_SERROR(SKIP_SYNCHRONIZE_SERROR_ENTRY_EXIT);
+
+            ta->to_guest = NOW();
 
             return;
         }
