@@ -187,11 +187,15 @@ int __init init_xen_time(void)
     return 0;
 }
 
+uint64_t get_ticks(void)
+{
+    return READ_SYSREG64(CNTPCT_EL0) - boot_count;
+}
+
 /* Return number of nanoseconds since boot */
 s_time_t get_s_time(void)
 {
-    uint64_t ticks = READ_SYSREG64(CNTPCT_EL0) - boot_count;
-    return ticks_to_ns(ticks);
+    return ticks_to_ns(get_ticks());
 }
 
 /* Set the timer to wake us up at a particular time.
