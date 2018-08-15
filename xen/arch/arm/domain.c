@@ -19,6 +19,7 @@
 #include <xen/sched.h>
 #include <xen/softirq.h>
 #include <xen/wait.h>
+#include <xen/sched-if.h>
 
 #include <asm/alternative.h>
 #include <asm/cpufeature.h>
@@ -50,8 +51,14 @@ static void do_idle(void)
     local_irq_disable();
     if ( cpu_is_haltable(cpu) )
     {
+        uint64_t ticks_before = get_ticks();
+        uint64_t ticks_passed;
+        struct tacc *ta = &this_cpu(tacc);
         dsb(sy);
         wfi();
+        ticks_passed = get_ticks() - ticks_before;
+        if (ticks_passed > 1)
+            ta->idle += ticks_to_ns(ticks_passed);
     }
     local_irq_enable();
 
