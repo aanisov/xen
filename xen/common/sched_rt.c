@@ -950,13 +950,19 @@ static void
 burn_budget(const struct scheduler *ops, struct rt_vcpu *svc, s_time_t now)
 {
     s_time_t delta;
+    struct tacc *ta = &this_cpu(tacc);
 
     /* don't burn budget for idle VCPU */
     if ( is_idle_vcpu(svc->vcpu) )
         return;
 
     /* burn at nanoseconds level */
-    delta = now - svc->last_start;
+    delta = ta->in_guest + ta->sync_hyp;
+
+    /* Budget is charged for the time spent, clear counters */
+    ta->in_guest = 0;
+    ta->sync_hyp = 0;
+
     /*
      * delta < 0 only happens in nested virtualization;
      * TODO: how should we handle delta < 0 in a better way?
@@ -965,12 +971,10 @@ burn_budget(const struct scheduler *ops, struct rt_vcpu *svc, s_time_t now)
     {
         printk("%s, ATTENTION: now is behind last_start! delta=%"PRI_stime"\n",
                 __func__, delta);
-        svc->last_start = now;
         return;
     }
 
     svc->cur_budget -= delta;
-    svc->last_start = now;
 
     if ( svc->cur_budget <= 0 )
     {
