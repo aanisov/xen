@@ -205,7 +205,7 @@ struct rt_vcpu {
 
     /* VCPU current infomation in nanosecond */
     s_time_t cur_budget;         /* current budget */
-    s_time_t last_start;         /* last start time */
+//    s_time_t last_start;         /* last start time */
     s_time_t cur_deadline;       /* current deadline for EDF */
 
     /* Up-pointers */
@@ -330,7 +330,7 @@ rt_dump_vcpu(const struct scheduler *ops, const struct rt_vcpu *svc)
     cpumask_and(mask, cpupool_mask, svc->vcpu->cpu_hard_affinity);
     cpulist_scnprintf(keyhandler_scratch, sizeof(keyhandler_scratch), mask);
     printk("[%5d.%-2u] cpu %u, (%"PRI_stime", %"PRI_stime"),"
-           " cur_b=%"PRI_stime" cur_d=%"PRI_stime" last_start=%"PRI_stime"\n"
+           " cur_b=%"PRI_stime" cur_d=%"PRI_stime"\n"
            " \t\t priority_level=%d has_extratime=%d\n"
            " \t\t onQ=%d runnable=%d flags=%x effective hard_affinity=%s\n",
             svc->vcpu->domain->domain_id,
@@ -340,7 +340,6 @@ rt_dump_vcpu(const struct scheduler *ops, const struct rt_vcpu *svc)
             svc->budget,
             svc->cur_budget,
             svc->cur_deadline,
-            svc->last_start,
             svc->priority_level,
             has_extratime(svc),
             vcpu_on_q(svc),
@@ -452,7 +451,7 @@ rt_update_deadline(s_time_t now, struct rt_vcpu *svc)
      * Then rt_update_deadline is called before rt_schedule, which
      * should only deduct the time spent in current period from the budget
      */
-    svc->last_start = now;
+//    svc->last_start = now;
     svc->cur_budget = svc->budget;
     svc->priority_level = 0;
 
@@ -861,7 +860,7 @@ rt_alloc_vdata(const struct scheduler *ops, struct vcpu *vc, void *dd)
     svc->flags = 0U;
     svc->sdom = dd;
     svc->vcpu = vc;
-    svc->last_start = 0;
+//    svc->last_start = 0;
 
     __set_bit(__RTDS_extratime, &svc->flags);
     svc->priority_level = 0;
@@ -950,13 +949,19 @@ static void
 burn_budget(const struct scheduler *ops, struct rt_vcpu *svc, s_time_t now)
 {
     s_time_t delta;
+    struct tacc *ta = &this_cpu(tacc);
 
     /* don't burn budget for idle VCPU */
     if ( is_idle_vcpu(svc->vcpu) )
         return;
 
     /* burn at nanoseconds level */
-    delta = now - svc->last_start;
+    delta = ta->in_guest + ta->sync_hyp;
+
+    /* Budget is charged for the PCPU time spent, clear PCPU counters */
+    ta->in_guest = 0;
+    ta->sync_hyp = 0;
+
     /*
      * delta < 0 only happens in nested virtualization;
      * TODO: how should we handle delta < 0 in a better way?
@@ -965,12 +970,10 @@ burn_budget(const struct scheduler *ops, struct rt_vcpu *svc, s_time_t now)
     {
         printk("%s, ATTENTION: now is behind last_start! delta=%"PRI_stime"\n",
                 __func__, delta);
-        svc->last_start = now;
         return;
     }
 
     svc->cur_budget -= delta;
-    svc->last_start = now;
 
     if ( svc->cur_budget <= 0 )
     {
@@ -1117,7 +1120,7 @@ rt_schedule(const struct scheduler *ops, s_time_t now, bool_t tasklet_work_sched
          vcpu_runnable(current) )
         __set_bit(__RTDS_delayed_runq_add, &scurr->flags);
 
-    snext->last_start = now;
+//    snext->last_start = now;
     ret.time =  -1; /* if an idle vcpu is picked */
     if ( !is_idle_vcpu(snext->vcpu) )
     {
