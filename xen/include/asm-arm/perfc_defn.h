@@ -78,6 +78,7 @@ PERFCOUNTER(hot_neighbor_irqs, "Hot neighbor interrupts")
 PERFCOUNTER(cold_foreign_irqs, "Cold foreign interrupts")
 PERFCOUNTER(cold_neighbor_irqs, "Cold neighbor interrupts")
 
+PERFCOUNTER(one_tick_wfi, "One tick wfis")
 /*#endif*/ /* __XEN_PERFC_DEFN_H__ */
 
 /*
