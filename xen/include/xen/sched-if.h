@@ -22,6 +22,19 @@ extern cpumask_t cpupool_free_cpus;
 #define SCHED_DEFAULT_RATELIMIT_US 1000
 extern int sched_ratelimit_us;
 
+/*
+ * Time accounting per PCPU
+ * from_guest   time of the last switch from guest
+ * to_guest     time of the last switch to guest
+ * in_guest     time spent in guest mode without switching of vcpu
+ * sync_hyp     time spent in sync hyp without switching of vcpu
+ */
+struct tacc {
+    s_time_t    from_guest;
+    s_time_t    to_guest;
+    s_time_t    in_guest;
+    s_time_t    sync_hyp;
+};
 
 /*
  * In order to allow a scheduler to remap the lock->cpu mapping,
@@ -45,6 +58,7 @@ struct schedule_data {
 #define curr_on_cpu(c)    (per_cpu(schedule_data, c).curr)
 
 DECLARE_PER_CPU(struct schedule_data, schedule_data);
+DECLARE_PER_CPU(struct tacc, tacc);
 DECLARE_PER_CPU(struct scheduler *, scheduler);
 DECLARE_PER_CPU(struct cpupool *, cpupool);
 
