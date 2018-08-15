@@ -24,12 +24,14 @@ extern int sched_ratelimit_us;
 
 /*
  * Time accounting per PCPU
+ * idle         time the PCPU spent in idle
  * from_guest   time of the last switch from guest
  * to_guest     time of the last switch to guest
  * in_guest     time spent in guest mode without switching of vcpu
  * sync_hyp     time spent in sync hyp without switching of vcpu
  */
 struct tacc {
+    s_time_t    idle;
     s_time_t    from_guest;
     s_time_t    to_guest;
     s_time_t    in_guest;
