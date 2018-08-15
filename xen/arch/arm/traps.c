@@ -2290,6 +2290,8 @@ void leave_hypervisor_tail(void)
             SYNCHRONIZE_SERROR(SKIP_SYNCHRONIZE_SERROR_ENTRY_EXIT);
 
             ta->to_guest = NOW();
+            if (this_cpu(scheduler)->tail)
+                this_cpu(scheduler)->tail();
 
             return;
         }
