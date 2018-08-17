@@ -54,6 +54,7 @@ struct schedule_data {
     struct vcpu        *curr;           /* current task                    */
     void               *sched_priv;
     struct timer        s_timer;        /* scheduling timer                */
+    s_time_t            s_time;         /* scheduling time */
     atomic_t            urgent_count;   /* how many urgent vcpus           */
 };
 
