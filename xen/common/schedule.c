@@ -1480,6 +1480,7 @@ static void schedule(void)
     spinlock_t           *lock;
     struct task_slice     next_slice;
     int cpu = smp_processor_id();
+    struct tacc *ta = &this_cpu(tacc);
 
     ASSERT_NOT_IN_ATOMIC();
 
@@ -1507,7 +1508,7 @@ static void schedule(void)
 
     lock = pcpu_schedule_lock_irq(cpu);
 
-    now = NOW();
+    now = ta->from_guest + ta->sync_hyp;
 
     stop_timer(&sd->s_timer);
 
@@ -1518,9 +1519,7 @@ static void schedule(void)
     next = next_slice.task;
 
     sd->curr = next;
-
-    if ( next_slice.time >= 0 ) /* -ve means no limit */
-        set_timer(&sd->s_timer, now + next_slice.time);
+    sd->s_time = next_slice.time;
 
     if ( unlikely(prev == next) )
     {
@@ -1542,7 +1541,7 @@ static void schedule(void)
              (now - next->runstate.state_entry_time) : 0,
              next_slice.time);
 
-    ASSERT(prev->runstate.state == RUNSTATE_running);
+//    ASSERT(prev->runstate.state == RUNSTATE_running);
 
     TRACE_4D(TRC_SCHED_SWITCH,
              prev->domain->domain_id, prev->vcpu_id,
@@ -1554,16 +1553,10 @@ static void schedule(void)
          (vcpu_runnable(prev) ? RUNSTATE_runnable : RUNSTATE_offline)),
         now);
 
-    ASSERT(next->runstate.state != RUNSTATE_running);
-    vcpu_runstate_change(next, RUNSTATE_running, now);
-
     /*
      * NB. Don't add any trace records from here until the actual context
      * switch, else lost_records resume will not work properly.
      */
-
-    ASSERT(!next->is_running);
-    next->is_running = 1;
 
     pcpu_schedule_unlock_irq(lock, cpu);
 
@@ -1574,9 +1567,24 @@ static void schedule(void)
     if ( next_slice.migrated )
         sched_move_irqs(next);
 
-    vcpu_periodic_timer_work(next);
-
     context_switch(prev, next);
+}
+
+void schedule_tailtip(s_time_t now)
+{
+    struct schedule_data *sd = &this_cpu(schedule_data);
+
+    if ( sd->s_time >= 0 ) /* -ve means no limit */
+        set_timer(&sd->s_timer, now + sd->s_time);
+    /*clear the time in order to not stick on it*/
+    sd->s_time = 0;
+
+    ASSERT(current->runstate.state != RUNSTATE_running);
+    vcpu_runstate_change(current, RUNSTATE_running, now);
+    ASSERT(!current->is_running);
+    current->is_running = 1;
+
+    vcpu_periodic_timer_work(current);
 }
 
 void context_saved(struct vcpu *prev)
