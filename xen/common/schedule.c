@@ -1508,7 +1508,7 @@ static void schedule(void)
 
     lock = pcpu_schedule_lock_irq(cpu);
 
-    now = ta->from_guest + ta->sync_hyp;
+    now = ta->from_sync_hyp ?: ta->from_guest;
 
     stop_timer(&sd->s_timer);
 
