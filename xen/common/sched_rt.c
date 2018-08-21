@@ -956,11 +956,11 @@ burn_budget(const struct scheduler *ops, struct rt_vcpu *svc, s_time_t now)
         return;
 
     /* burn at nanoseconds level */
-    delta = ta->in_guest + ta->sync_hyp;
+    delta = ta->in_guest + ta->in_sync_hyp;
 
     /* Budget is charged for the PCPU time spent, clear PCPU counters */
     ta->in_guest = 0;
-    ta->sync_hyp = 0;
+    ta->in_sync_hyp = 0;
 
     /*
      * delta < 0 only happens in nested virtualization;

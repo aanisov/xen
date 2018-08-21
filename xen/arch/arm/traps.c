@@ -2020,6 +2020,8 @@ static void enter_hypervisor_head(struct cpu_user_regs *regs)
 
         ta->from_guest = NOW();
         ta->in_guest += ta->from_guest - ta->to_guest;
+        /*We don't know here if we are doing sync trap yet*/
+        ta->from_sync_hyp = 0;
         /*
          * If we pended a virtual abort, preserve it until it gets cleared.
          * See ARM ARM DDI 0487A.j D1.14.3 (Virtual Interrupts) for details,
@@ -2187,8 +2189,10 @@ void do_trap_guest_sync(struct cpu_user_regs *regs)
     if ( guest_mode(regs) )
     {
         struct tacc *ta = &this_cpu(tacc);
+        s_time_t now = NOW();
 
-        ta->sync_hyp += NOW() - ta->from_guest;
+        ta->in_sync_hyp += now - ta->from_guest;
+        ta->from_sync_hyp = now;
     }
 }
 
@@ -2248,8 +2252,10 @@ void do_trap_guest_serror(struct cpu_user_regs *regs)
     if ( guest_mode(regs) )
     {
         struct tacc *ta = &this_cpu(tacc);
+        s_time_t now = NOW();
 
-        ta->sync_hyp += NOW() - ta->from_guest;
+        ta->in_sync_hyp += now - ta->from_guest;
+        ta->from_sync_hyp = now;
     }
 }
 
