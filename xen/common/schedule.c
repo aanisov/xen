@@ -1573,14 +1573,19 @@ static void schedule(void)
 void schedule_tailtip(s_time_t now)
 {
     struct schedule_data *sd = &this_cpu(schedule_data);
+    spinlock_t *lock;
+    int cpu = smp_processor_id();
 
     if ( sd->s_time >= 0 ) /* -ve means no limit */
         set_timer(&sd->s_timer, now + sd->s_time);
     /*clear the time in order to not stick on it*/
     sd->s_time = 0;
 
+    lock = pcpu_schedule_lock(cpu);
     ASSERT(current->runstate.state != RUNSTATE_running);
     vcpu_runstate_change(current, RUNSTATE_running, now);
+    pcpu_schedule_unlock(lock, cpu);
+
     ASSERT(!current->is_running);
     current->is_running = 1;
 
