@@ -1547,11 +1547,11 @@ static void schedule(void)
              prev->domain->domain_id, prev->vcpu_id,
              next->domain->domain_id, next->vcpu_id);
 
-    vcpu_runstate_change(
+/*    vcpu_runstate_change(
         prev,
         ((prev->pause_flags & VPF_blocked) ? RUNSTATE_blocked :
          (vcpu_runnable(prev) ? RUNSTATE_runnable : RUNSTATE_offline)),
-        now);
+        now);*/
 
     /*
      * NB. Don't add any trace records from here until the actual context
@@ -1586,10 +1586,32 @@ void schedule_tailtip(s_time_t now)
     vcpu_runstate_change(current, RUNSTATE_running, now);
     pcpu_schedule_unlock(lock, cpu);
 
-    ASSERT(!current->is_running);
     current->is_running = 1;
 
     vcpu_periodic_timer_work(current);
+}
+
+void sched_head(s_time_t now)
+{
+    spinlock_t *lock;
+    int cpu = smp_processor_id();
+//    struct schedule_data *sd = &this_cpu(schedule_data);
+
+    if (likely(current->runstate.state != RUNSTATE_runnable))
+    {
+        lock = pcpu_schedule_lock(cpu);
+        vcpu_runstate_change(
+            current,
+            ((current->pause_flags & VPF_blocked) ? RUNSTATE_blocked :
+             (vcpu_runnable(current) ? RUNSTATE_runnable : RUNSTATE_offline)),
+            now);
+        pcpu_schedule_unlock(lock, cpu);
+    }
+#if 0
+    stop_timer(&sd->s_timer);
+    /* Keep left time, for the case we skip scheduling during this hyp entry*/
+    sd->s_time = ((&sd->s_timer)->expires - now > 0) ? (&sd->s_timer)->expires - now : 0;
+#endif
 }
 
 void context_saved(struct vcpu *prev)

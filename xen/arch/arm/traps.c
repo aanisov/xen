@@ -2273,6 +2273,9 @@ void do_trap_fiq(struct cpu_user_regs *regs)
 
 void leave_hypervisor_tail(void)
 {
+    struct tacc *ta = &this_cpu(tacc);
+    sched_head(ta->from_sync_hyp?:ta->from_guest);
+
     while (1)
     {
         local_irq_disable();
