@@ -1579,7 +1579,7 @@ void schedule_tailtip(s_time_t now)
     if ( sd->s_time >= 0 ) /* -ve means no limit */
         set_timer(&sd->s_timer, now + sd->s_time);
     /*clear the time in order to not stick on it*/
-    sd->s_time = 0;
+    //sd->s_time = 0;
 
     lock = pcpu_schedule_lock(cpu);
     ASSERT(current->runstate.state != RUNSTATE_running);
@@ -1591,27 +1591,28 @@ void schedule_tailtip(s_time_t now)
     vcpu_periodic_timer_work(current);
 }
 
-void sched_head(s_time_t now)
+void sched_head(void)
 {
     spinlock_t *lock;
-    int cpu = smp_processor_id();
-//    struct schedule_data *sd = &this_cpu(schedule_data);
+    unsigned long flags;
+    struct tacc *ta = &this_cpu(tacc);
+
+    struct schedule_data *sd = &this_cpu(schedule_data);
 
     if (likely(current->runstate.state != RUNSTATE_runnable))
     {
-        lock = pcpu_schedule_lock(cpu);
+        s_time_t guest_time = ta->from_sync_hyp?:ta->from_guest;
+        lock = vcpu_schedule_lock_irqsave(current, &flags);
+        stop_timer(&sd->s_timer);
+        /* Keep left time, for the case we skip scheduling during this hyp entry*/
+        sd->s_time = ((&sd->s_timer)->expires - guest_time > 0) ? (&sd->s_timer)->expires - guest_time : 0;
         vcpu_runstate_change(
             current,
             ((current->pause_flags & VPF_blocked) ? RUNSTATE_blocked :
              (vcpu_runnable(current) ? RUNSTATE_runnable : RUNSTATE_offline)),
-            now);
-        pcpu_schedule_unlock(lock, cpu);
+             guest_time);
+        vcpu_schedule_unlock_irqrestore(lock, flags, current);
     }
-#if 0
-    stop_timer(&sd->s_timer);
-    /* Keep left time, for the case we skip scheduling during this hyp entry*/
-    sd->s_time = ((&sd->s_timer)->expires - now > 0) ? (&sd->s_timer)->expires - now : 0;
-#endif
 }
 
 void context_saved(struct vcpu *prev)

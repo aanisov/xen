@@ -2275,8 +2275,7 @@ void do_trap_fiq(struct cpu_user_regs *regs)
 
 void leave_hypervisor_tail(void)
 {
-    struct tacc *ta = &this_cpu(tacc);
-    sched_head(ta->from_sync_hyp?:ta->from_guest);
+    sched_head();
 
     while (1)
     {
