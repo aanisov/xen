@@ -956,6 +956,16 @@ burn_budget(const struct scheduler *ops, struct rt_vcpu *svc, s_time_t now)
         return;
 
     /* burn at nanoseconds level */
+#if 0
+    {
+        s_time_t diff = (ta->in_guest + ta->in_sync_hyp) != ((ta->from_sync_hyp?:ta->from_guest) - ta->to_guest);
+        if( diff > 1 )
+        {
+            printk("time is %"PRI_stime", diff is %"PRI_stime"\n", ta->in_guest + ta->in_sync_hyp, diff);
+//            WARN();
+        }
+    }
+#endif
     delta = ta->in_guest + ta->in_sync_hyp;
 
     /* Budget is charged for the PCPU time spent, clear PCPU counters */
@@ -984,6 +994,7 @@ burn_budget(const struct scheduler *ops, struct rt_vcpu *svc, s_time_t now)
         }
         else
         {
+            printk("d%dv%d cur_budget=%"PRI_stime"\n", svc->vcpu->domain->domain_id, svc->vcpu->vcpu_id, svc->cur_budget);
             svc->cur_budget = 0;
             __set_bit(__RTDS_depleted, &svc->flags);
         }

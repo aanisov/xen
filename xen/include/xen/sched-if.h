@@ -40,7 +40,7 @@ struct tacc {
     s_time_t    in_sync_hyp;
 };
 
-void sched_head(s_time_t now);
+void sched_head(void);
 
 /*
  * In order to allow a scheduler to remap the lock->cpu mapping,
