@@ -34,6 +34,7 @@
 #include <xenevtchn.h>
 #include <xenctrl.h>
 
+#if 0
 #define PERROR(_m, _a...)                                       \
 do {                                                            \
     int __saved_errno = errno;                                  \
@@ -41,7 +42,13 @@ do {                                                            \
             __saved_errno, strerror(__saved_errno));            \
     errno = __saved_errno;                                      \
 } while (0)
+#endif
 
+
+#undef PERROR
+#define PERROR(_f...) fprintf(stderr, _f)
+#undef perror
+#define perror(_f...) fprintf(stderr, _f)
 
 /***** Compile time configuration of defaults ********************************/
 
@@ -1182,8 +1189,10 @@ int main(int argc, char **argv)
 
     if ( opts.cpu_mask_str )
     {
-        if ( parse_cpu_mask() )
+        if ( parse_cpu_mask() ) {
+            printf ("failed cpu_mask parsing");
             exit(EXIT_FAILURE);
+            }
     }
 
     if ( opts.timeout != 0 ) 
