@@ -11,7 +11,7 @@ def usage():
           "Usage: " + sys.argv[0] + """ [-c mhz] defs-file
                -c mhz   optional time stamps values generator frequency in
                         MHz. If specified, timestamps are shown in ns,
-                        otherwise in cycles.
+                        otherwise in cycles. Accepts float.
 
           Parses trace data in binary format, as output by Xentrace and
           reformats it according to the rules in a file of definitions.  The
@@ -65,7 +65,7 @@ def sighand(x,y):
 
 ##### Main code
 
-mhz = 0
+mhz = 0.0
 
 if len(sys.argv) < 2:
     usage()
@@ -74,7 +74,7 @@ try:
     opts, arg = getopt.getopt(sys.argv[1:], "c:" )
 
     for opt in opts:
-        if opt[0] == '-c' : mhz = int(opt[1])
+        if opt[0] == '-c' : mhz = float(opt[1])
 
 except getopt.GetoptError:
     usage()
