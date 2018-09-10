@@ -26,9 +26,11 @@ def usage():
             will output in hexadecimal and 'o' will output in octal ]
 
           Which correspond to the CPU number, event ID, timestamp counter and
-          the 7 data fields from the trace record.  There should be one such
-          rule for each type of event.
-          
+          the 7 data fields from the trace record. Also combined 64bit LE
+          fields are available. E.g. %(21)d is a decimal representation of a
+          64bit LE value placed as the first element of the trace record.
+          There should be one such rule for each type of event.
+
           Depending on your system and the volume of trace buffer data,
           this script may not be able to keep up with the output of xentrace
           if it is piped directly.  In these circumstances you should have
@@ -185,6 +187,13 @@ while not interrupted:
                 break
             (d1, d2, d3, d4, d5, d6, d7) = struct.unpack(D7REC, line)
 
+        d21 = (d2 << 32) | (0x00000000ffffffff & d1)
+        d32 = (d3 << 32) | (0x00000000ffffffff & d2)
+        d43 = (d4 << 32) | (0x00000000ffffffff & d3)
+        d54 = (d5 << 32) | (0x00000000ffffffff & d4)
+        d65 = (d6 << 32) | (0x00000000ffffffff & d5)
+        d76 = (d7 << 32) | (0x00000000ffffffff & d6)
+
         # Event field is 28bit of 'uint32_t' in header, not 'long'.
         event &= 0x0fffffff
         if event == 0x1f003:
@@ -239,7 +248,13 @@ while not interrupted:
                 '4'     : d4,
                 '5'     : d5,
                 '6'     : d6,
-                '7'     : d7    }
+                '7'     : d7,
+                '21'    : d21,
+                '32'    : d32,
+                '43'    : d43,
+                '54'    : d54,
+                '65'    : d65,
+                '76'    : d76    }
 
         try:
 
