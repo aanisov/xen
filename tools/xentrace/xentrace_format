@@ -8,7 +8,11 @@ import re, sys, string, signal, struct, os, getopt
 
 def usage():
     print >> sys.stderr, \
-          "Usage: " + sys.argv[0] + """ defs-file
+          "Usage: " + sys.argv[0] + """ [-c mhz] defs-file
+               -c mhz   optional time stamps values generator frequency in
+                        MHz. If specified, timestamps are shown in ns,
+                        otherwise in cycles.
+
           Parses trace data in binary format, as output by Xentrace and
           reformats it according to the rules in a file of definitions.  The
           rules in this file should have the format ({ and } show grouping
@@ -223,7 +227,7 @@ while not interrupted:
             last_tsc[cpu] = tsc
 
         if mhz:
-            tsc = tsc / (mhz*1000000.0)
+            tsc = tsc * 1000.0 / mhz
 
         args = {'cpu'   : cpu,
                 'tsc'   : tsc,
