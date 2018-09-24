@@ -536,6 +536,8 @@ static int vgic_v2_distr_mmio_write(struct vcpu *v, mmio_info_t *info,
         vgic_store_itargetsr(v->domain, rank, gicd_reg - GICD_ITARGETSR,
                              itargetsr);
         vgic_unlock_rank(v, rank, flags);
+        printk(XENLOG_G_ERR"%pv: vGICD: word write %#"PRIregister" to GICD_ITARGETSR%d\n",
+               v, r, gicd_reg - GICD_ITARGETSR);
         return 1;
     }
 

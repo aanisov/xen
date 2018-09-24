@@ -2113,6 +2113,7 @@ void do_trap_guest_sync(struct cpu_user_regs *regs)
          * ARMv7 (DDI 0406C.b): B1.14.9
          * ARMv8 (DDI 0487A.d): D1-1505 Table D1-51
          */
+//#if 0
         if ( !check_conditional_instr(regs, hsr) )
         {
             advance_pc(regs, hsr);
@@ -2127,6 +2128,7 @@ void do_trap_guest_sync(struct cpu_user_regs *regs)
             perfc_incr(trap_wfi);
             vcpu_block_unless_event_pending(current);
         }
+//#endif
         advance_pc(regs, hsr);
         break;
     case HSR_EC_CP15_32:

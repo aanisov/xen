@@ -480,7 +480,7 @@ struct pending_irq *irq_to_pending(struct vcpu *v, unsigned int irq)
     struct pending_irq *n;
     /* Pending irqs allocation strategy: the first vgic.nr_spis irqs
      * are used for SPIs; the rests are used for per cpu irqs */
-    if ( irq < 32 )
+    if ( unlikely(irq < 32) )
         n = &v->arch.vgic.pending_irqs[irq];
     else if ( is_lpi(irq) )
         n = v->domain->arch.vgic.handler->lpi_to_pending(v->domain, irq);
@@ -526,7 +526,7 @@ void vgic_vcpu_inject_irq(struct vcpu *v, unsigned int virq)
     }
 
     /* vcpu offline */
-    if ( test_bit(_VPF_down, &v->pause_flags) )
+    if ( unlikely (test_bit(_VPF_down, &v->pause_flags)) )
     {
         spin_unlock_irqrestore(&v->arch.vgic.lock, flags);
         return;
@@ -544,7 +544,7 @@ void vgic_vcpu_inject_irq(struct vcpu *v, unsigned int virq)
     n->priority = priority;
 
     /* the irq is enabled */
-    if ( test_bit(GIC_IRQ_GUEST_ENABLED, &n->status) )
+    if ( likely( test_bit(GIC_IRQ_GUEST_ENABLED, &n->status)) )
         gic_raise_guest_irq(v, virq, priority);
 
     list_for_each_entry ( iter, &v->arch.vgic.inflight_irqs, inflight )
@@ -570,13 +570,13 @@ out:
 
 void vgic_vcpu_inject_spi(struct domain *d, unsigned int virq)
 {
-    struct vcpu *v;
+//    struct vcpu *v;
 
     /* the IRQ needs to be an SPI */
     ASSERT(virq >= 32 && virq <= vgic_num_irqs(d));
 
-    v = vgic_get_target_vcpu(d->vcpu[0], virq);
-    vgic_vcpu_inject_irq(v, virq);
+    //v = vgic_get_target_vcpu(d->vcpu[0], virq);
+    vgic_vcpu_inject_irq(d->vcpu[0], virq);
 }
 
 void arch_evtchn_inject(struct vcpu *v)

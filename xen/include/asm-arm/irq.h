@@ -46,7 +46,11 @@ void do_IRQ(struct cpu_user_regs *regs, unsigned int irq, int is_fiq);
 
 static inline bool is_lpi(unsigned int irq)
 {
+#if 0
     return irq >= LPI_OFFSET;
+#else
+    return false;
+#endif
 }
 
 #define domain_pirq_to_irq(d, pirq) (pirq)

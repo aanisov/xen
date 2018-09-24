@@ -434,7 +434,7 @@ void gic_raise_inflight_irq(struct vcpu *v, unsigned int virtual_irq)
     if ( !test_bit(GIC_IRQ_GUEST_ENABLED, &n->status) )
         return;
 
-    if ( list_empty(&n->lr_queue) )
+    if ( likely(list_empty(&n->lr_queue)) )
     {
         if ( v == current )
             gic_update_one_lr(v, n->lr);
