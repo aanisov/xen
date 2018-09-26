@@ -23,6 +23,7 @@
 #include <xen/init.h>
 #include <xen/errno.h>
 #include <xen/sched.h>
+#include <xen/trace.h>
 
 #include <asm/gic.h>
 #include <asm/vgic.h>
@@ -206,7 +207,6 @@ void do_IRQ(struct cpu_user_regs *regs, unsigned int irq, int is_fiq)
     if ( likely (test_bit(_IRQ_GUEST, &desc->status)) )
     {
         struct irq_guest *info = irq_get_guest_info(desc);
-
         perfc_incr(guest_irqs);
         desc->handler->end(desc);
 
@@ -247,7 +247,9 @@ void do_IRQ(struct cpu_user_regs *regs, unsigned int irq, int is_fiq)
             }
         }
 
+        TRACE_1DV(TRC_AIRQ_1, irq);
         vgic_vcpu_inject_spi(info->d, info->virq);
+        TRACE_1DV(TRC_AIRQ_2, irq);
         goto out_no_end;
     }
 

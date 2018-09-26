@@ -374,6 +374,7 @@ static void gicv2_hyp_init(void)
     vtr = readl_gich(GICH_VTR);
     nr_lrs  = (vtr & GICH_V2_VTR_NRLRGS) + 1;
     gicv2_info.nr_lrs = nr_lrs;
+    printk("GICV2: %d LRs\n", nr_lrs);
 }
 
 static void gicv2_hyp_disable(void)

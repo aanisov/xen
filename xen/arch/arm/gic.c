@@ -27,6 +27,7 @@
 #include <xen/list.h>
 #include <xen/device_tree.h>
 #include <xen/acpi.h>
+#include <xen/trace.h>
 #include <asm/p2m.h>
 #include <asm/domain.h>
 #include <asm/platform.h>
@@ -92,7 +93,7 @@ void gic_restore_state(struct vcpu *v)
 
     isb();
 
-    gic_restore_pending_irqs(v);
+//    gic_restore_pending_irqs(v);
 }
 
 /* desc->irq needs to be disabled before calling this function */
@@ -436,7 +437,7 @@ void gic_raise_inflight_irq(struct vcpu *v, unsigned int virtual_irq)
 
     if ( likely(list_empty(&n->lr_queue)) )
     {
-        if ( v == current )
+        if ( likely(v == current) )
             gic_update_one_lr(v, n->lr);
     }
 #ifdef GIC_DEBUG
@@ -628,10 +629,9 @@ static void gic_restore_pending_irqs(struct vcpu *v)
     unsigned int nr_lrs = gic_hw_ops->info->nr_lrs;
     int lrs = nr_lrs;
 
-    spin_lock_irqsave(&v->arch.vgic.lock, flags);
+    ASSERT(!list_empty(&current->arch.vgic.lr_pending));
 
-    if ( list_empty(&v->arch.vgic.lr_pending) )
-        goto out;
+    spin_lock_irqsave(&v->arch.vgic.lock, flags);
 
     inflight_r = &v->arch.vgic.inflight_irqs;
     list_for_each_entry_safe ( p, t, &v->arch.vgic.lr_pending, lr_queue )
@@ -727,6 +727,9 @@ out:
 void gic_inject(void)
 {
     ASSERT(!local_irq_is_enabled());
+
+    if ( list_empty(&current->arch.vgic.lr_pending) )
+        return;
 
     gic_restore_pending_irqs(current);
 

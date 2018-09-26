@@ -33,6 +33,8 @@
 #include <xen/symbols.h>
 #include <xen/version.h>
 #include <xen/virtual_region.h>
+#include <xen/trace.h>
+
 
 #include <public/sched.h>
 #include <public/xen.h>
@@ -2301,7 +2303,9 @@ void leave_hypervisor_tail(void)
     {
         local_irq_disable();
         if (!softirq_pending(smp_processor_id())) {
+            TRACE_0DV(TRC_AIRQ_3);
             gic_inject();
+            TRACE_0DV(TRC_AIRQ_4);
 
             /*
              * If the SErrors handle option is "DIVERSE", we have to prevent
