@@ -247,9 +247,9 @@ void do_IRQ(struct cpu_user_regs *regs, unsigned int irq, int is_fiq)
             }
         }
 
-        TRACE_1DV(TRC_AIRQ_1, irq);
+//        TRACE_1DV(TRC_AIRQ_1, irq);
         vgic_vcpu_inject_spi(info->d, info->virq);
-        TRACE_1DV(TRC_AIRQ_2, irq);
+//        TRACE_1DV(TRC_AIRQ_2, irq);
         goto out_no_end;
     }
 

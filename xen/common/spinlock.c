@@ -347,10 +347,8 @@ static void spinlock_profile_print_elem(struct lock_profile *data,
         printk("%s %s:\n", lock_profile_ancs[type].name, data->name);
     else
         printk("%s %d %s:\n", lock_profile_ancs[type].name, idx, data->name);
-    printk("  lock:%12"PRId64"(%08X:%08X), block:%12"PRId64"(%08X:%08X)\n",
-           data->lock_cnt, (u32)(data->time_hold >> 32), (u32)data->time_hold,
-           data->block_cnt, (u32)(data->time_block >> 32),
-           (u32)data->time_block);
+    printk("  lock:%12"PRId64"(%"PRI_stime"), block:%12"PRId64"(%"PRI_stime")\n",
+           data->lock_cnt, data->time_hold, data->block_cnt, data->time_block);
 }
 
 void spinlock_profile_printall(unsigned char key)

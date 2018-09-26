@@ -2303,9 +2303,9 @@ void leave_hypervisor_tail(void)
     {
         local_irq_disable();
         if (!softirq_pending(smp_processor_id())) {
-            TRACE_0DV(TRC_AIRQ_3);
+//            TRACE_0DV(TRC_AIRQ_3);
             gic_inject();
-            TRACE_0DV(TRC_AIRQ_4);
+//            TRACE_0DV(TRC_AIRQ_4);
 
             /*
              * If the SErrors handle option is "DIVERSE", we have to prevent

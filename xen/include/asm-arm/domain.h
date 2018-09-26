@@ -99,6 +99,7 @@ struct arch_domain
         struct pending_irq *pending_irqs;
         /* Base address for guest GIC */
         paddr_t dbase; /* Distributor base address */
+        struct lock_profile_qhead   profile_head;
 #ifdef CONFIG_HAS_GICV3
         /* GIC V3 addressing */
         /* List of contiguous occupied by the redistributors */
@@ -271,6 +272,7 @@ struct arch_vcpu
          * lr_pending is a subset of vgic.inflight_irqs. */
         struct list_head lr_pending;
         spinlock_t lock;
+        struct lock_profile_qhead   profile_head;
 
         /* GICv3: redistributor base and flags for this vCPU */
         paddr_t rdist_base;

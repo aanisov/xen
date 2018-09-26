@@ -412,7 +412,9 @@ struct xen_sysctl_page_offline_op {
 /* Record-type: */
 #define LOCKPROF_TYPE_GLOBAL      0   /* global lock, idx meaningless */
 #define LOCKPROF_TYPE_PERDOM      1   /* per-domain lock, idx is domid */
-#define LOCKPROF_TYPE_N           2   /* number of types */
+#define LOCKPROF_TYPE_DOMVGIC     2   /* per-domain lock, idx is domid */
+#define LOCKPROF_TYPE_VCPUVGIC    3   /* per-vcpu lock, idx is vcpu_id */
+#define LOCKPROF_TYPE_N           4   /* number of types */
 struct xen_sysctl_lockprof_data {
     char     name[40];     /* lock name (may include up to 2 %d specifiers) */
     int32_t  type;         /* LOCKPROF_TYPE_??? */

@@ -636,6 +636,8 @@ int arch_domain_create(struct domain *d, unsigned int domcr_flags,
         goto fail;
     }
 
+    lock_profile_register_struct(LOCKPROF_TYPE_DOMVGIC, &d->arch.vgic, d->domain_id, "Domain VGIC");
+
     if ( (rc = domain_vgic_register(d, &count)) != 0 )
         goto fail;
 

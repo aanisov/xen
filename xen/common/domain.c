@@ -161,6 +161,8 @@ struct vcpu *alloc_vcpu(
     if ( sched_init_vcpu(v, cpu_id) != 0 )
         goto fail_wq;
 
+    lock_profile_register_struct(LOCKPROF_TYPE_VCPUVGIC, &v->arch.vgic, ((d->domain_id << 16) + vcpu_id), "VCPU VGIC");
+
     if ( vcpu_initialise(v) != 0 )
     {
         sched_destroy_vcpu(v);

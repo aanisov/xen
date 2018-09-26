@@ -25,6 +25,7 @@
 #include <xen/irq.h>
 #include <xen/sched.h>
 #include <xen/perfc.h>
+#include <xen/trace.h>
 
 #include <asm/current.h>
 
@@ -129,7 +130,7 @@ int domain_vgic_init(struct domain *d, unsigned int nr_spis)
 
     d->arch.vgic.nr_spis = nr_spis;
 
-    spin_lock_init(&d->arch.vgic.lock);
+    spin_lock_init_prof(&d->arch.vgic, lock);
 
     d->arch.vgic.shared_irqs =
         xzalloc_array(struct vgic_irq_rank, DOMAIN_NR_RANKS(d));
@@ -213,7 +214,7 @@ int vcpu_vgic_init(struct vcpu *v)
 
     INIT_LIST_HEAD(&v->arch.vgic.inflight_irqs);
     INIT_LIST_HEAD(&v->arch.vgic.lr_pending);
-    spin_lock_init(&v->arch.vgic.lock);
+    spin_lock_init_prof(&v->arch.vgic, lock);
 
     return 0;
 }
@@ -515,7 +516,9 @@ void vgic_vcpu_inject_irq(struct vcpu *v, unsigned int virq)
     unsigned long flags;
     bool running;
 
+    TRACE_1DV(TRC_AIRQ_1, virq);
     spin_lock_irqsave(&v->arch.vgic.lock, flags);
+    TRACE_1DV(TRC_AIRQ_2, virq);
 
     n = irq_to_pending(v, virq);
     /* If an LPI has been removed, there is nothing to inject here. */
@@ -544,7 +547,7 @@ void vgic_vcpu_inject_irq(struct vcpu *v, unsigned int virq)
     n->priority = priority;
 
     /* the irq is enabled */
-    if ( likely( test_bit(GIC_IRQ_GUEST_ENABLED, &n->status) )
+    if ( likely( test_bit(GIC_IRQ_GUEST_ENABLED, &n->status) ) )
         gic_raise_guest_irq(v, virq, priority);
 
     list_for_each_entry ( iter, &v->arch.vgic.inflight_irqs, inflight )
