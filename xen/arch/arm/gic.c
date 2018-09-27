@@ -631,9 +631,9 @@ static void gic_restore_pending_irqs(struct vcpu *v)
 
     ASSERT(!list_empty(&current->arch.vgic.lr_pending));
 
-    TRACE_0DV(TRC_AIRQ_3);
+//    TRACE_0DV(TRC_AIRQ_3);
     spin_lock_irqsave(&v->arch.vgic.lock, flags);
-    TRACE_0DV(TRC_AIRQ_4);
+//    TRACE_0DV(TRC_AIRQ_4);
 
     inflight_r = &v->arch.vgic.inflight_irqs;
     list_for_each_entry_safe ( p, t, &v->arch.vgic.lr_pending, lr_queue )

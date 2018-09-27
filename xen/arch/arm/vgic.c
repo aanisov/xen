@@ -516,9 +516,9 @@ void vgic_vcpu_inject_irq(struct vcpu *v, unsigned int virq)
     unsigned long flags;
     bool running;
 
-    TRACE_1DV(TRC_AIRQ_1, virq);
+//    TRACE_1DV(TRC_AIRQ_1, virq);
     spin_lock_irqsave(&v->arch.vgic.lock, flags);
-    TRACE_1DV(TRC_AIRQ_2, virq);
+//    TRACE_1DV(TRC_AIRQ_2, virq);
 
     n = irq_to_pending(v, virq);
     /* If an LPI has been removed, there is nothing to inject here. */
