@@ -91,8 +91,6 @@ void gic_restore_state(struct vcpu *v)
     gic_hw_ops->restore_state(v);
 
     isb();
-
-    gic_restore_pending_irqs(v);
 }
 
 /* desc->irq needs to be disabled before calling this function */
