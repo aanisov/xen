@@ -128,4 +128,104 @@ void __trace_hypercall(uint32_t event, unsigned long op,
         }                                                       \
     } while ( 0 )
 
+/* Convenience macros for calling the trace function with saved DOMID and VCPUID*/
+#define TRACE_0DV(_e)                                         \
+            do {                                                        \
+                if ( unlikely(tb_init_done) )                           \
+                {                                                       \
+                    u32 _d[1];                                          \
+                    _d[0] = (current->domain->domain_id << 16) +        \
+                            current->vcpu_id;                           \
+                    __trace_var(_e, 1, sizeof(_d), _d);                 \
+                }                                                       \
+            } while ( 0 )
+         
+#define TRACE_1DV(_e,d1)                                      \
+            do {                                                        \
+                if ( unlikely(tb_init_done) )                           \
+                {                                                       \
+                    u32 _d[2];                                          \
+                    _d[0] = (current->domain->domain_id << 16) +        \
+                            current->vcpu_id;                           \
+                    _d[1] = d1;                                         \
+                    __trace_var(_e, 1, sizeof(_d), _d);                 \
+                }                                                       \
+            } while ( 0 )
+         
+#define TRACE_2DV(_e,d1,d2,d3)                                   \
+            do {                                                        \
+                if ( unlikely(tb_init_done) )                           \
+                {                                                       \
+                    u32 _d[3];                                          \
+                    _d[0] = (current->domain->domain_id << 16) +        \
+                            current->vcpu_id;                           \
+                    _d[1] = d1;                                         \
+                    _d[2] = d2;                                         \
+                    __trace_var(_e, 1, sizeof(_d), _d);                 \
+                }                                                       \
+            } while ( 0 )
+         
+#define TRACE_3DV(_e,d1,d2,d3,d4)                                \
+            do {                                                        \
+                if ( unlikely(tb_init_done) )                           \
+                {                                                       \
+                    u32 _d[4];                                          \
+                    _d[0] = (current->domain->domain_id << 16) +        \
+                            current->vcpu_id;                           \
+                    _d[1] = d1;                                         \
+                    _d[2] = d2                                         \
+                    _d[3] = d3                                         \
+                    __trace_var(_e, 1, sizeof(_d), _d);                 \
+                }                                                       \
+            } while ( 0 )
+         
+#define TRACE_4DV(_e,d1,d2,d3,d4,d5)                             \
+            do {                                                        \
+                if ( unlikely(tb_init_done) )                           \
+                {                                                       \
+                    u32 _d[5];                                          \
+                    _d[0] = (current->domain->domain_id << 16) +        \
+                            current->vcpu_id;                           \
+                    _d[1] = d1;                                         \
+                    _d[2] = d2                                         \
+                    _d[3] = d3                                         \
+                    _d[4] = d4                                         \
+                    __trace_var(_e, 1, sizeof(_d), _d);                 \
+                }                                                       \
+            } while ( 0 )
+        
+#define TRACE_5DV(_e,d1,d2,d3,d4,d5,d6)                             \
+            do {                                                        \
+                if ( unlikely(tb_init_done) )                           \
+                {                                                       \
+                    u32 _d[6];                                          \
+                    _d[0] = (current->domain->domain_id << 16) +        \
+                            current->vcpu_id;                           \
+                    _d[1] = d1;                                         \
+                    _d[2] = d2                                         \
+                    _d[3] = d3                                         \
+                    _d[4] = d4                                         \
+                    _d[5] = d5                                         \
+                    __trace_var(_e, 1, sizeof(_d), _d);                 \
+                }                                                       \
+            } while ( 0 )
+
+#define TRACE_6DV(_e,d1,d2,d3,d4,d5,d6)                             \
+                    do {                                                        \
+                        if ( unlikely(tb_init_done) )                           \
+                        {                                                       \
+                            u32 _d[7];                                          \
+                            _d[0] = (current->domain->domain_id << 16) +        \
+                                    current->vcpu_id;                           \
+                            _d[1] = d1;                                         \
+                            _d[2] = d2                                         \
+                            _d[3] = d3                                         \
+                            _d[4] = d4                                         \
+                            _d[5] = d5                                         \
+                            _d[6] = d6                                         \
+                            __trace_var(_e, 1, sizeof(_d), _d);                 \
+                        }                                                       \
+                    } while ( 0 )
+
+
 #endif /* __XEN_TRACE_H__ */
