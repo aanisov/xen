@@ -2285,6 +2285,7 @@ void do_trap_guest_serror(struct cpu_user_regs *regs)
 
 void do_trap_irq(struct cpu_user_regs *regs)
 {
+    TRACE_0DV(TRC_AIRQ_1);
     enter_hypervisor_head(regs);
     gic_interrupt(regs, 0);
 }
@@ -2314,7 +2315,7 @@ void leave_hypervisor_tail(void)
              * to skip synchronizing SErrors for other SErrors handle options.
              */
             SYNCHRONIZE_SERROR(SKIP_SYNCHRONIZE_SERROR_ENTRY_EXIT);
-
+            TRACE_0DV(TRC_AIRQ_3);
             return;
         }
         local_irq_enable();
