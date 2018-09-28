@@ -605,8 +605,6 @@ void gic_clear_lrs(struct vcpu *v)
     if ( is_idle_vcpu(v) )
         return;
 
-    gic_hw_ops->update_hcr_status(GICH_HCR_UIE, false);
-
     TRACE_2D(TRC_AIRQ_SPB, DVCPUID(v) ,(uint32_t)(uint64_t)gic_clear_lrs);
     spin_lock_irqsave(&v->arch.vgic.lock, flags);
     TRACE_2D(TRC_AIRQ_SPA, DVCPUID(v) ,(uint32_t)(uint64_t)gic_clear_lrs);
@@ -743,6 +741,8 @@ void gic_inject(void)
 
     if ( !list_empty(&current->arch.vgic.lr_pending) && lr_all_full() )
         gic_hw_ops->update_hcr_status(GICH_HCR_UIE, true);
+    else
+        gic_hw_ops->update_hcr_status(GICH_HCR_UIE, false);
 }
 
 static void do_sgi(struct cpu_user_regs *regs, enum gic_sgi sgi)
