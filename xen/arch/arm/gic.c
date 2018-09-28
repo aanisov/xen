@@ -609,7 +609,9 @@ void gic_clear_lrs(struct vcpu *v)
 
     gic_hw_ops->update_hcr_status(GICH_HCR_UIE, false);
 
+    TRACE_2D(TRC_AIRQ_SPB, DVCPUID(v) ,(uint32_t)(uint64_t)gic_clear_lrs);
     spin_lock_irqsave(&v->arch.vgic.lock, flags);
+    TRACE_2D(TRC_AIRQ_SPA, DVCPUID(v) ,(uint32_t)(uint64_t)gic_clear_lrs);
 
     while ((i = find_next_bit((const unsigned long *) &this_cpu(lr_mask),
                               nr_lrs, i)) < nr_lrs ) {
@@ -617,7 +619,9 @@ void gic_clear_lrs(struct vcpu *v)
         i++;
     }
 
+    TRACE_2D(TRC_AIRQ_SPBU, DVCPUID(v) ,(uint32_t)(uint64_t)gic_clear_lrs);
     spin_unlock_irqrestore(&v->arch.vgic.lock, flags);
+    TRACE_2D(TRC_AIRQ_SPU, DVCPUID(v) ,(uint32_t)(uint64_t)gic_clear_lrs);
 }
 
 static void gic_restore_pending_irqs(struct vcpu *v)
@@ -629,7 +633,9 @@ static void gic_restore_pending_irqs(struct vcpu *v)
     unsigned int nr_lrs = gic_hw_ops->info->nr_lrs;
     int lrs = nr_lrs;
 
+    TRACE_2D(TRC_AIRQ_SPB, DVCPUID(v) ,(uint32_t)(uint64_t)gic_restore_pending_irqs);
     spin_lock_irqsave(&v->arch.vgic.lock, flags);
+    TRACE_2D(TRC_AIRQ_SPA, DVCPUID(v) ,(uint32_t)(uint64_t)gic_restore_pending_irqs);
 
     if ( list_empty(&v->arch.vgic.lr_pending) )
         goto out;
@@ -673,7 +679,9 @@ found:
     }
 
 out:
+    TRACE_2D(TRC_AIRQ_SPBU, DVCPUID(v) ,(uint32_t)(uint64_t)gic_restore_pending_irqs);
     spin_unlock_irqrestore(&v->arch.vgic.lock, flags);
+    TRACE_2D(TRC_AIRQ_SPU, DVCPUID(v) ,(uint32_t)(uint64_t)gic_restore_pending_irqs);
 }
 
 void gic_clear_pending_irqs(struct vcpu *v)
@@ -700,7 +708,9 @@ int gic_events_need_delivery(void)
     mask_priority = gic_hw_ops->read_vmcr_priority();
     active_priority = find_next_bit(&apr, 32, 0);
 
+    TRACE_2D(TRC_AIRQ_SPB, DVCPUID(v) ,(uint32_t)(uint64_t)gic_events_need_delivery);
     spin_lock_irqsave(&v->arch.vgic.lock, flags);
+    TRACE_2D(TRC_AIRQ_SPA, DVCPUID(v) ,(uint32_t)(uint64_t)gic_events_need_delivery);
 
     /* TODO: We order the guest irqs by priority, but we don't change
      * the priority of host irqs. */
@@ -721,7 +731,9 @@ int gic_events_need_delivery(void)
     }
 
 out:
+    TRACE_2D(TRC_AIRQ_SPBU, DVCPUID(v) ,(uint32_t)(uint64_t)gic_events_need_delivery);
     spin_unlock_irqrestore(&v->arch.vgic.lock, flags);
+    TRACE_2D(TRC_AIRQ_SPU, DVCPUID(v) ,(uint32_t)(uint64_t)gic_events_need_delivery);
     return rc;
 }
 

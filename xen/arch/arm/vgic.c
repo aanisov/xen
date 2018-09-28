@@ -502,11 +502,15 @@ void vgic_clear_pending_irqs(struct vcpu *v)
     struct pending_irq *p, *t;
     unsigned long flags;
 
+    TRACE_2D(TRC_AIRQ_SPB, DVCPUID(v) ,(uint32_t)(uint64_t)vgic_clear_pending_irqs);
     spin_lock_irqsave(&v->arch.vgic.lock, flags);
+    TRACE_2D(TRC_AIRQ_SPA, DVCPUID(v) ,(uint32_t)(uint64_t)vgic_clear_pending_irqs);
     list_for_each_entry_safe ( p, t, &v->arch.vgic.inflight_irqs, inflight )
         list_del_init(&p->inflight);
     gic_clear_pending_irqs(v);
+    TRACE_2D(TRC_AIRQ_SPBU, DVCPUID(v) ,(uint32_t)(uint64_t)vgic_clear_pending_irqs);
     spin_unlock_irqrestore(&v->arch.vgic.lock, flags);
+    TRACE_2D(TRC_AIRQ_SPU, DVCPUID(v) ,(uint32_t)(uint64_t)vgic_clear_pending_irqs);
 }
 
 void vgic_vcpu_inject_irq(struct vcpu *v, unsigned int virq)
@@ -516,20 +520,26 @@ void vgic_vcpu_inject_irq(struct vcpu *v, unsigned int virq)
     unsigned long flags;
     bool running;
 
+    TRACE_2D(TRC_AIRQ_SPB, DVCPUID(v) ,(uint32_t)(uint64_t)vgic_vcpu_inject_irq);
     spin_lock_irqsave(&v->arch.vgic.lock, flags);
+    TRACE_2D(TRC_AIRQ_SPA, DVCPUID(v) ,(uint32_t)(uint64_t)vgic_vcpu_inject_irq);
 
     n = irq_to_pending(v, virq);
     /* If an LPI has been removed, there is nothing to inject here. */
     if ( unlikely(!n) )
     {
+        TRACE_2D(TRC_AIRQ_SPBU, DVCPUID(v) ,(uint32_t)(uint64_t)vgic_vcpu_inject_irq);
         spin_unlock_irqrestore(&v->arch.vgic.lock, flags);
+        TRACE_2D(TRC_AIRQ_SPU, DVCPUID(v) ,(uint32_t)(uint64_t)vgic_vcpu_inject_irq);
         return;
     }
 
     /* vcpu offline */
     if ( test_bit(_VPF_down, &v->pause_flags) )
     {
+        TRACE_2D(TRC_AIRQ_SPBU, DVCPUID(v) ,(uint32_t)(uint64_t)vgic_vcpu_inject_irq);
         spin_unlock_irqrestore(&v->arch.vgic.lock, flags);
+        TRACE_2D(TRC_AIRQ_SPU, DVCPUID(v) ,(uint32_t)(uint64_t)vgic_vcpu_inject_irq);
         return;
     }
 
@@ -558,7 +568,9 @@ void vgic_vcpu_inject_irq(struct vcpu *v, unsigned int virq)
     }
     list_add_tail(&n->inflight, &v->arch.vgic.inflight_irqs);
 out:
+    TRACE_2D(TRC_AIRQ_SPBU, DVCPUID(v) ,(uint32_t)(uint64_t)vgic_vcpu_inject_irq);
     spin_unlock_irqrestore(&v->arch.vgic.lock, flags);
+    TRACE_2D(TRC_AIRQ_SPU, DVCPUID(v) ,(uint32_t)(uint64_t)vgic_vcpu_inject_irq);
     /* we have a new higher priority irq, inject it into the guest */
     running = v->is_running;
     vcpu_unblock(v);
