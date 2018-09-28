@@ -27,6 +27,7 @@
 #include <xen/list.h>
 #include <xen/device_tree.h>
 #include <xen/acpi.h>
+#include <xen/trace.h>
 #include <asm/p2m.h>
 #include <asm/domain.h>
 #include <asm/platform.h>

@@ -25,6 +25,7 @@
 #include <xen/irq.h>
 #include <xen/sched.h>
 #include <xen/perfc.h>
+#include <xen/trace.h>
 
 #include <asm/current.h>
 

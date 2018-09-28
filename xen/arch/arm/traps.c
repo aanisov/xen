@@ -33,6 +33,8 @@
 #include <xen/symbols.h>
 #include <xen/version.h>
 #include <xen/virtual_region.h>
+#include <xen/trace.h>
+
 
 #include <public/sched.h>
 #include <public/xen.h>
