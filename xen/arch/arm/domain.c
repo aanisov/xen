@@ -19,6 +19,7 @@
 #include <xen/sched.h>
 #include <xen/softirq.h>
 #include <xen/wait.h>
+#include <xen/trace.h>
 
 #include <asm/alternative.h>
 #include <asm/cpufeature.h>
@@ -50,6 +51,7 @@ static void do_idle(void)
     local_irq_disable();
     if ( cpu_is_haltable(cpu) )
     {
+        TRACE_0D(TRC_AIRQ_4);
         dsb(sy);
         wfi();
     }

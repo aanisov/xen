@@ -771,7 +771,7 @@ void gic_interrupt(struct cpu_user_regs *regs, int is_fiq)
     do  {
         /* Reading IRQ will ACK it */
         irq = gic_hw_ops->read_irq();
-
+        TRACE_1DV(TRC_AIRQ_2, irq);
         if ( likely(irq >= 16 && irq < 1020) )
         {
             local_irq_enable();
