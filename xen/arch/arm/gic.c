@@ -637,10 +637,10 @@ static void gic_restore_pending_irqs(struct vcpu *v)
     unsigned int nr_lrs = gic_hw_ops->info->nr_lrs;
     int lrs = nr_lrs;
 
-    spin_lock_irqsave(&v->arch.vgic.lock, flags);
-
     if ( list_empty(&v->arch.vgic.lr_pending) )
-        goto out;
+        return;
+
+    spin_lock_irqsave(&v->arch.vgic.lock, flags);
 
     inflight_r = &v->arch.vgic.inflight_irqs;
     list_for_each_entry_safe ( p, t, &v->arch.vgic.lr_pending, lr_queue )
