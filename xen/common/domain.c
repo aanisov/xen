@@ -151,7 +151,7 @@ struct vcpu *alloc_vcpu(
     }
     else
     {
-        v->runstate.state = RUNSTATE_offline;        
+        v->runstate.state = RUNSTATE_offline;
         v->runstate.state_entry_time = NOW();
         set_bit(_VPF_down, &v->pause_flags);
         vcpu_info_reset(v);
