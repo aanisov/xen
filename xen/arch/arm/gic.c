@@ -772,7 +772,7 @@ void gic_interrupt(struct cpu_user_regs *regs, int is_fiq)
         /* Reading IRQ will ACK it */
         irq = gic_hw_ops->read_irq();
         TRACE_1DV(TRC_AIRQ_2, irq);
-        if ( likely(irq >= 16 && irq < 1020) )
+        if ( likely(irq >32 && irq < 1020) )
         {
             local_irq_enable();
             do_IRQ(regs, irq, is_fiq);
@@ -787,6 +787,10 @@ void gic_interrupt(struct cpu_user_regs *regs, int is_fiq)
         else if ( unlikely(irq < 16) )
         {
             do_sgi(regs, irq);
+        }
+        else if ( irq < 32 )
+        {
+            do_ppi(regs, irq);
         }
         else
         {
