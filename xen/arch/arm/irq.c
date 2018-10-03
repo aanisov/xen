@@ -266,6 +266,55 @@ out_no_end:
     irq_exit();
 }
 
+void do_ppi(struct cpu_user_regs *regs, unsigned int irq)
+{
+    struct irq_desc *desc = irq_to_desc(irq);
+
+    irq_enter();
+
+    desc->handler->ack(desc);
+
+    if ( unlikely(!desc->action) )
+    {
+        printk("Unknown %s %#3.3x\n",
+               "IRQ", irq);
+        goto out;
+    }
+
+    set_bit(_IRQ_PENDING, &desc->status);
+
+    /*
+     * Since we set PENDING, if another processor is handling a different
+     * instance of this same irq, the other processor will take care of it.
+     */
+    if ( test_bit(_IRQ_DISABLED, &desc->status) ||
+         test_bit(_IRQ_INPROGRESS, &desc->status) )
+        goto out;
+
+    set_bit(_IRQ_INPROGRESS, &desc->status);
+
+    while ( test_bit(_IRQ_PENDING, &desc->status) )
+    {
+        struct irqaction *action;
+
+        clear_bit(_IRQ_PENDING, &desc->status);
+        action = desc->action;
+
+        do
+        {
+            action->handler(irq, action->dev_id, regs);
+            action = action->next;
+        } while ( action );
+
+    }
+
+    clear_bit(_IRQ_INPROGRESS, &desc->status);
+
+out:
+    desc->handler->end(desc);
+    irq_exit();
+}
+
 void release_irq(unsigned int irq, const void *dev_id)
 {
     struct irq_desc *desc;
