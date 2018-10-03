@@ -62,6 +62,7 @@ struct irq_desc *__irq_to_desc(int irq);
 #define irq_to_desc(irq)    __irq_to_desc(irq)
 
 void do_IRQ(struct cpu_user_regs *regs, unsigned int irq, int is_fiq);
+void do_ppi(struct cpu_user_regs *regs, unsigned int irq);
 
 #ifdef CONFIG_GICV3
 static inline bool is_lpi(unsigned int irq)
