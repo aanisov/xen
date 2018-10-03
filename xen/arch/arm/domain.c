@@ -299,9 +299,11 @@ static void update_runstate_area(struct vcpu *v)
 
 static void schedule_tail(struct vcpu *prev)
 {
+    TRACE_1DV(TRC_AIRQ_5, DVCPUID(prev));
     ctxt_switch_from(prev);
-
+    TRACE_1DV(TRC_AIRQ_7, DVCPUID(prev));
     ctxt_switch_to(current);
+    TRACE_1DV(TRC_AIRQ_8, DVCPUID(prev));
 
     local_irq_enable();
 
@@ -312,6 +314,7 @@ static void schedule_tail(struct vcpu *prev)
 
     /* Ensure that the vcpu has an up-to-date time base. */
     update_vcpu_system_time(current);
+    TRACE_1DV(TRC_AIRQ_9, DVCPUID(prev));
 }
 
 static void continue_new_vcpu(struct vcpu *prev)

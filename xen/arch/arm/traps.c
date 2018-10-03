@@ -2288,6 +2288,11 @@ void do_trap_irq(struct cpu_user_regs *regs)
     TRACE_0DV(TRC_AIRQ_1);
     enter_hypervisor_head(regs);
     gic_interrupt(regs, 0);
+
+    if ( !guest_mode(regs) )
+    {
+        TRACE_0DV(TRC_AIRQ_6);
+    }
 }
 
 void do_trap_fiq(struct cpu_user_regs *regs)
