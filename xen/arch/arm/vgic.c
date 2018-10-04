@@ -64,14 +64,18 @@ struct vgic_irq_rank *vgic_rank_irq(struct vcpu *v, unsigned int irq)
 
 void vgic_init_pending_irq(struct pending_irq *p, unsigned int virq)
 {
+#ifdef CONFIG_GICV3
     /* The lpi_vcpu_id field must be big enough to hold a VCPU ID. */
     BUILD_BUG_ON(BIT(sizeof(p->lpi_vcpu_id) * 8) < MAX_VIRT_CPUS);
+#endif
 
     memset(p, 0, sizeof(*p));
     INIT_LIST_HEAD(&p->inflight);
     INIT_LIST_HEAD(&p->lr_queue);
     p->irq = virq;
+#ifdef CONFIG_GICV3
     p->lpi_vcpu_id = INVALID_VCPU_ID;
+#endif
 }
 
 static void vgic_rank_init(struct vgic_irq_rank *rank, uint8_t index,
@@ -246,9 +250,11 @@ static int vgic_get_virq_priority(struct vcpu *v, unsigned int virq)
 {
     struct vgic_irq_rank *rank;
 
+#ifdef CONFIG_GICV3
     /* LPIs don't have a rank, also store their priority separately. */
     if ( is_lpi(virq) )
         return v->domain->arch.vgic.handler->lpi_get_priority(v->domain, virq);
+#endif
 
     rank = vgic_rank_irq(v, virq);
     return ACCESS_ONCE(rank->priority[virq & INTERRUPT_RANK_MASK]);
@@ -259,8 +265,10 @@ bool vgic_migrate_irq(struct vcpu *old, struct vcpu *new, unsigned int irq)
     unsigned long flags;
     struct pending_irq *p;
 
+#ifdef CONFIG_GICV3
     /* This will never be called for an LPI, as we don't migrate them. */
     ASSERT(!is_lpi(irq));
+#endif
 
     spin_lock_irqsave(&old->arch.vgic.lock, flags);
 
@@ -315,6 +323,7 @@ void arch_move_irqs(struct vcpu *v)
     struct vcpu *v_target;
     int i;
 
+#ifdef CONFIG_GICV3
     /*
      * We don't migrate LPIs at the moment.
      * If we ever do, we must make sure that the struct pending_irq does
@@ -325,6 +334,7 @@ void arch_move_irqs(struct vcpu *v)
      * don't participate.
      */
     ASSERT(!is_lpi(vgic_num_irqs(d) - 1));
+#endif
 
     for ( i = 32; i < vgic_num_irqs(d); i++ )
     {
@@ -346,8 +356,10 @@ void vgic_disable_irqs(struct vcpu *v, uint32_t r, int n)
     int i = 0;
     struct vcpu *v_target;
 
+#ifdef CONFIG_GICV3
     /* LPIs will never be disabled via this function. */
     ASSERT(!is_lpi(32 * n + 31));
+#endif
 
     while ( (i = find_next_bit(&mask, 32, i)) < 32 ) {
         irq = i + (32 * n);
@@ -396,8 +408,10 @@ void vgic_enable_irqs(struct vcpu *v, uint32_t r, int n)
     struct vcpu *v_target;
     struct domain *d = v->domain;
 
+#ifdef CONFIG_GICV3
     /* LPIs will never be enabled via this function. */
     ASSERT(!is_lpi(32 * n + 31));
+#endif
 
     while ( (i = find_next_bit(&mask, 32, i)) < 32 ) {
         irq = i + (32 * n);
@@ -493,8 +507,10 @@ struct pending_irq *irq_to_pending(struct vcpu *v, unsigned int irq)
      * are used for SPIs; the rests are used for per cpu irqs */
     if ( irq < 32 )
         n = &v->arch.vgic.pending_irqs[irq];
+#ifdef CONFIG_GICV3
     else if ( is_lpi(irq) )
         n = v->domain->arch.vgic.handler->lpi_to_pending(v->domain, irq);
+#endif
     else
         n = &v->domain->arch.vgic.pending_irqs[irq - 32];
     return n;
@@ -553,12 +569,14 @@ void vgic_inject_irq(struct domain *d, struct vcpu *v, unsigned int virq,
     spin_lock_irqsave(&v->arch.vgic.lock, flags);
 
     n = irq_to_pending(v, virq);
+#ifdef CONFIG_GICV3
     /* If an LPI has been removed, there is nothing to inject here. */
     if ( unlikely(!n) )
     {
         spin_unlock_irqrestore(&v->arch.vgic.lock, flags);
         return;
     }
+#endif
 
     /* vcpu offline */
     if ( test_bit(_VPF_down, &v->pause_flags) )
@@ -610,8 +628,10 @@ bool vgic_evtchn_irq_pending(struct vcpu *v)
     struct pending_irq *p;
 
     p = irq_to_pending(v, v->domain->arch.evtchn_irq);
+#ifdef CONFIG_GICV3
     /* Does not work for LPIs. */
     ASSERT(!is_lpi(v->domain->arch.evtchn_irq));
+#endif
 
     return list_empty(&p->inflight);
 }

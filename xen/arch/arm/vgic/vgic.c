@@ -703,8 +703,10 @@ bool vgic_evtchn_irq_pending(struct vcpu *v)
     unsigned long flags;
     bool pending;
 
+#ifdef CONFIG_GICV3
     /* Does not work for LPIs. */
     ASSERT(!is_lpi(v->domain->arch.evtchn_irq));
+#endif
 
     irq = vgic_get_irq(v->domain, v, v->domain->arch.evtchn_irq);
     spin_lock_irqsave(&irq->irq_lock, flags);
