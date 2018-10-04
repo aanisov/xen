@@ -424,10 +424,8 @@ void gic_remove_irq_from_queues(struct vcpu *v, struct pending_irq *p)
     gic_remove_from_lr_pending(v, p);
 }
 
-void gic_raise_inflight_irq(struct vcpu *v, unsigned int virtual_irq)
+void gic_raise_inflight_irq(struct vcpu *v, struct pending_irq *n)
 {
-    struct pending_irq *n = irq_to_pending(v, virtual_irq);
-
 #ifdef CONFIG_HAS_GICV3
     /* If an LPI has been removed meanwhile, there is nothing left to raise. */
     if ( unlikely(!n) )
