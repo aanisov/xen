@@ -272,6 +272,7 @@ struct vcpu
     struct vpci_vcpu vpci;
 
     struct arch_vcpu arch;
+    struct vcpu *prev;
 };
 
 /* Per-domain lock can be recursively acquired in fault handlers. */
