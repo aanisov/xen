@@ -75,10 +75,8 @@ void gic_remove_from_lr_pending(struct vcpu *v, struct pending_irq *p)
     list_del_init(&p->lr_queue);
 }
 
-void gic_raise_inflight_irq(struct vcpu *v, unsigned int virtual_irq)
+void gic_raise_inflight_irq(struct vcpu *v, struct pending_irq *n)
 {
-    struct pending_irq *n = irq_to_pending(v, virtual_irq);
-
 #ifdef CONFIG_GICV3
     /* If an LPI has been removed meanwhile, there is nothing left to raise. */
     if ( unlikely(!n) )
@@ -139,12 +137,10 @@ static unsigned int gic_find_unused_lr(struct vcpu *v,
     return lr;
 }
 
-void gic_raise_guest_irq(struct vcpu *v, unsigned int virtual_irq,
-        unsigned int priority)
+void gic_raise_guest_irq(struct vcpu *v, struct pending_irq *p)
 {
     int i;
     unsigned int nr_lrs = gic_get_nr_lrs();
-    struct pending_irq *p = irq_to_pending(v, virtual_irq);
 
     ASSERT(spin_is_locked(&v->arch.vgic.lock));
 
@@ -240,7 +236,7 @@ static void gic_update_one_lr(struct vcpu *v, int i)
         if ( test_bit(GIC_IRQ_GUEST_ENABLED, &p->status) &&
              test_bit(GIC_IRQ_GUEST_QUEUED, &p->status) &&
              !test_bit(GIC_IRQ_GUEST_MIGRATING, &p->status) )
-            gic_raise_guest_irq(v, irq, p->priority);
+            gic_raise_guest_irq(v, p);
         else {
             list_del_init(&p->inflight);
             /*
