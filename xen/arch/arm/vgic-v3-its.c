@@ -448,7 +448,7 @@ static void update_lpi_vgic_status(struct vcpu *v, struct pending_irq *p)
     {
         if ( !list_empty(&p->inflight) &&
              !test_bit(GIC_IRQ_GUEST_VISIBLE, &p->status) )
-            gic_raise_guest_irq(v, p->irq, p->lpi_priority);
+            gic_raise_guest_irq(v, p);
     }
     else
         gic_remove_from_lr_pending(v, p);

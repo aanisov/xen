@@ -287,6 +287,8 @@ enum gic_sgi_mode;
 extern struct vcpu *vgic_get_target_vcpu(struct vcpu *v, unsigned int virq);
 extern void vgic_remove_irq_from_queues(struct vcpu *v, struct pending_irq *p);
 extern void gic_remove_from_lr_pending(struct vcpu *v, struct pending_irq *p);
+extern void gic_raise_guest_irq(struct vcpu *v, struct pending_irq *p);
+extern void gic_raise_inflight_irq(struct vcpu *v, struct pending_irq *n);
 extern void vgic_init_pending_irq(struct pending_irq *p, unsigned int virq);
 extern struct pending_irq *irq_to_pending(struct vcpu *v, unsigned int irq);
 extern struct pending_irq *spi_to_pending(struct domain *d, unsigned int irq);
