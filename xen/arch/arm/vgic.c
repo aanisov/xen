@@ -582,6 +582,12 @@ void vgic_inject_irq(struct domain *d, struct vcpu *v, unsigned int virq,
         v = vgic_get_target_vcpu(d->vcpu[0], virq);
     };
 
+    /* vcpu offline */
+    if ( unlikely(test_bit(_VPF_down, &v->pause_flags)) )
+    {
+        return;
+    }
+
     spin_lock_irqsave(&v->arch.vgic.lock, flags);
 
     n = irq_to_pending(v, virq);
@@ -593,13 +599,6 @@ void vgic_inject_irq(struct domain *d, struct vcpu *v, unsigned int virq,
         return;
     }
 #endif
-
-    /* vcpu offline */
-    if ( test_bit(_VPF_down, &v->pause_flags) )
-    {
-        spin_unlock_irqrestore(&v->arch.vgic.lock, flags);
-        return;
-    }
 
     set_bit(GIC_IRQ_GUEST_QUEUED, &n->status);
 
