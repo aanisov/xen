@@ -243,7 +243,7 @@ extern void init_maintenance_interrupt(void);
 extern void init_gsx_interrupt(void);
 extern void gic_raise_guest_irq(struct vcpu *v, unsigned int irq,
         unsigned int priority);
-extern void gic_raise_inflight_irq(struct vcpu *v, unsigned int virtual_irq);
+extern void gic_raise_inflight_irq(struct vcpu *v, struct pending_irq *n);
 extern void gic_remove_from_lr_pending(struct vcpu *v, struct pending_irq *p);
 extern void gic_remove_irq_from_queues(struct vcpu *v, struct pending_irq *p);
 
