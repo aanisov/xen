@@ -136,7 +136,9 @@ int gic_route_irq_to_guest(struct domain *d, unsigned int virq,
     /* Caller has already checked that the IRQ is an SPI */
     ASSERT(virq >= 32);
     ASSERT(virq < vgic_num_irqs(d));
+#ifdef CONFIG_GICV3
     ASSERT(!is_lpi(virq));
+#endif
 
     /*
      * When routing an IRQ to guest, the virtual state is not synced
@@ -168,7 +170,9 @@ int gic_remove_irq_from_guest(struct domain *d, unsigned int virq,
 
     ASSERT(spin_is_locked(&desc->lock));
     ASSERT(test_bit(_IRQ_GUEST, &desc->status));
+#ifdef CONFIG_GICV3
     ASSERT(!is_lpi(virq));
+#endif
 
     /*
      * Removing an interrupt while the domain is running may have
@@ -391,6 +395,7 @@ void gic_interrupt(struct cpu_user_regs *regs, int is_fiq)
             do_IRQ(regs, irq, is_fiq);
             local_irq_disable();
         }
+#ifdef CONFIG_GICV3
         else if ( is_lpi(irq) )
         {
             local_irq_enable();
@@ -398,6 +403,7 @@ void gic_interrupt(struct cpu_user_regs *regs, int is_fiq)
             gic_hw_ops->do_LPI(irq);
             local_irq_disable();
         }
+#endif
         else if ( unlikely(irq < 16) )
         {
             do_sgi(regs, irq);

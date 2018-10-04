@@ -32,6 +32,8 @@
 #include <asm/page.h>
 #include <asm/sysregs.h>
 
+#error "The current gic/vgic/domain code does not support GICv3"
+
 /*
  * There could be a lot of LPIs on the host side, and they always go to
  * a guest. So having a struct irq_desc for each of them would be wasteful
