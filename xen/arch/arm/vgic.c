@@ -527,24 +527,22 @@ void vgic_vcpu_inject_irq(struct vcpu *v, unsigned int virq)
     unsigned long flags;
     bool running;
 
-    spin_lock_irqsave(&v->arch.vgic.lock, flags);
+    /* vcpu offline */
+    if ( unlikely(test_bit(_VPF_down, &v->pause_flags)) )
+    {
+        return;
+    }
 
     n = irq_to_pending(v, virq);
     /* If an LPI has been removed, there is nothing to inject here. */
 #ifdef CONFIG_HAS_GICV3
     if ( unlikely(!n) )
     {
-        spin_unlock_irqrestore(&v->arch.vgic.lock, flags);
         return;
     }
 #endif
 
-    /* vcpu offline */
-    if ( test_bit(_VPF_down, &v->pause_flags) )
-    {
-        spin_unlock_irqrestore(&v->arch.vgic.lock, flags);
-        return;
-    }
+    spin_lock_irqsave(&v->arch.vgic.lock, flags);
 
     set_bit(GIC_IRQ_GUEST_QUEUED, &n->status);
 
