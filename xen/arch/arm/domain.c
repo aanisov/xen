@@ -267,6 +267,7 @@ static void ctxt_switch_to(struct vcpu *n)
 }
 
 /* Update per-VCPU guest runstate shared memory area (if registered). */
+#if 0
 static void update_runstate_area(struct vcpu *v)
 {
     void __user *guest_handle = NULL;
@@ -294,15 +295,16 @@ static void update_runstate_area(struct vcpu *v)
                             (void *)(&v->runstate.state_entry_time + 1) - 1, 1);
     }
 }
+#endif
 
 static void schedule_tail(struct vcpu *prev)
 {
     ctxt_switch_from(prev);
     if ( ! (is_idle_vcpu(prev) && (prev->prev == current)) )
         ctxt_switch_to(current);
-    /* VGIC */
     if( !is_idle_vcpu(current) )
     {
+        /* VGIC */
         gic_restore_state(current);
         WRITE_SYSREG32(current->arch.cntkctl, CNTKCTL_EL1);
         virt_timer_restore(current);
@@ -314,8 +316,8 @@ static void schedule_tail(struct vcpu *prev)
 
     context_saved(prev);
 
-    if ( prev != current )
-        update_runstate_area(current);
+//    if ( prev != current )
+//        update_runstate_area(current);
 
     /* Ensure that the vcpu has an up-to-date time base. */
     update_vcpu_system_time(current);
@@ -341,8 +343,8 @@ void context_switch(struct vcpu *prev, struct vcpu *next)
     ASSERT(prev != next);
     ASSERT(cpumask_empty(next->vcpu_dirty_cpumask));
 
-    if ( prev != next )
-        update_runstate_area(prev);
+//    if ( prev != next )
+//        update_runstate_area(prev);
 
     local_irq_disable();
 
