@@ -173,7 +173,7 @@ static unsigned int gicv2_cpu_mask(const cpumask_t *cpumask)
 
 static void gicv2_save_state(struct vcpu *v)
 {
-#if 0
+//#if 0
     int i;
 
     /* No need for spinlocks here because interrupts are disabled around
@@ -182,7 +182,7 @@ static void gicv2_save_state(struct vcpu *v)
      */
     for ( i = 0; i < gicv2_info.nr_lrs; i++ )
         v->arch.gic.v2.lr[i] = readl_gich(GICH_LR + i * 4);
-#endif
+//#endif
 
     v->arch.gic.v2.apr = readl_gich(GICH_APR);
     v->arch.gic.v2.vmcr = readl_gich(GICH_VMCR);
@@ -192,12 +192,12 @@ static void gicv2_save_state(struct vcpu *v)
 
 static void gicv2_restore_state(const struct vcpu *v)
 {
-#if 0
+//#if 0
     int i;
 
     for ( i = 0; i < gicv2_info.nr_lrs; i++ )
         writel_gich(v->arch.gic.v2.lr[i], GICH_LR + i * 4);
-#endif
+//#endif
 
     writel_gich(v->arch.gic.v2.apr, GICH_APR);
     writel_gich(v->arch.gic.v2.vmcr, GICH_VMCR);
