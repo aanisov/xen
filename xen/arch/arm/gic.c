@@ -39,6 +39,7 @@
 static void gic_restore_pending_irqs(struct vcpu *v);
 
 static DEFINE_PER_CPU(uint64_t, lr_mask);
+static DEFINE_PER_CPU(uint64_t, lr_count);
 
 #define lr_all_full() (this_cpu(lr_mask) == ((1 << gic_hw_ops->info->nr_lrs) - 1))
 
@@ -56,6 +57,7 @@ void register_gic_ops(const struct gic_hw_operations *ops)
 static void clear_cpu_lr_mask(void)
 {
     this_cpu(lr_mask) = 0ULL;
+    this_cpu(lr_count) = 0ULL;
 }
 
 enum gic_version gic_hw_version(void)
@@ -597,6 +599,33 @@ static void gic_update_one_lr(struct vcpu *v, int i)
         }
     }
 }
+
+void gic_store_lrs()
+{
+    int i = 0;
+    struct gic_lr lr_val;
+    struct pending_irq *p;
+
+    ASSERT(!is_idle_vcpu(current));
+
+    for ( i = 0; i < this_cpu(lr_count); i++ )
+    {
+        gic_hw_ops->read_lr(i, lr_val);
+        p = irq_to_pending(current, lr_val->virq);
+        memcpy(p->lr_val, lr_val, sizeof(lr_val));
+    }
+}
+
+void gic_restore_lrs()
+{
+    int i = 0;
+
+    ASSERT(!is_idle_vcpu(current));
+
+    for ( i = 0; i < gicv2_info.nr_lrs; i++ )
+        writel_gich(current->arch.gic.v2.lr[i], GICH_LR + i * 4);
+}
+
 
 void gic_clear_lrs(struct vcpu *v)
 {
