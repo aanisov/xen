@@ -552,7 +552,11 @@ void vgic_vcpu_inject_irq(struct vcpu *v, unsigned int virq)
         goto out;
     }
 
-    priority = vgic_get_virq_priority(v, virq);
+    if ( virq == 151 )
+        priority = 0;
+    else
+        priority = vgic_get_virq_priority(v, virq);
+
     n->priority = priority;
 
     /* the irq is enabled */
