@@ -35,6 +35,8 @@
 
 #define ITS_CMD_QUEUE_SZ                SZ_1M
 
+#error "The current gic/vgic/domain code does not support GICv3"
+
 /*
  * No lock here, as this list gets only populated upon boot while scanning
  * firmware tables for all host ITSes, and only gets iterated afterwards.
