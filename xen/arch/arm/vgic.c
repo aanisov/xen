@@ -259,16 +259,15 @@ bool vgic_migrate_irq(struct vcpu *old, struct vcpu *new, unsigned int irq)
     ASSERT(!is_lpi(irq));
 #endif
 
-    spin_lock_irqsave(&old->arch.vgic.lock, flags);
-
     p = irq_to_pending(old, irq);
 
     /* nothing to do for virtual interrupts */
     if ( p->desc == NULL )
     {
-        spin_unlock_irqrestore(&old->arch.vgic.lock, flags);
         return true;
     }
+
+    spin_lock_irqsave(&old->arch.vgic.lock, flags);
 
     /* migration already in progress, no need to do anything */
     if ( test_bit(GIC_IRQ_GUEST_MIGRATING, &p->status) )
