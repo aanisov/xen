@@ -547,7 +547,10 @@ void vgic_vcpu_inject_irq(struct vcpu *v, unsigned int virq)
 
     if ( !list_empty(&n->inflight) )
     {
-        gic_raise_inflight_irq(v, n);
+//        gic_raise_inflight_irq(v, n);
+        /* The IRQ is already on inflight list, so we are done with the only 
+           GUEST_QUEUED flag set
+           */
         goto out;
     }
 
@@ -558,9 +561,13 @@ void vgic_vcpu_inject_irq(struct vcpu *v, unsigned int virq)
 
     n->priority = priority;
 
-    /* the irq is enabled */
-    if ( test_bit(GIC_IRQ_GUEST_ENABLED, &n->status) )
-        gic_raise_guest_irq(v, virq, priority);
+    /* the irq is enabled */ 
+    /*
+     * We do not raise the IRQ now, 
+     * Accordingly to the new logic we will setup LRs on exit to the guest
+     */
+//    if ( test_bit(GIC_IRQ_GUEST_ENABLED, &n->status) )
+//        gic_raise_guest_irq(v, virq, priority);
 
     list_for_each_entry ( iter, &v->arch.vgic.inflight_irqs, inflight )
     {

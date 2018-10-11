@@ -603,30 +603,26 @@ static void gic_update_one_lr(struct vcpu *v, int i)
 void gic_store_lrs()
 {
     int i = 0;
-    struct gic_lr lr_val;
+    struct gic_lr *lr_val;
     struct pending_irq *p;
 
     ASSERT(!is_idle_vcpu(current));
 
-    for ( i = 0; i < this_cpu(lr_count); i++ )
+    current->visible_lrs = this_cpu(lr_count);
+
+    for ( i = 0; i < current->visible_lrs; i++ )
     {
-        gic_hw_ops->read_lr(i, lr_val);
-        p = irq_to_pending(current, lr_val->virq);
+        gic_hw_ops->read_lr(i, &lr_val);
+        p = irq_to_pending(current, lr_val.virq);
         memcpy(p->lr_val, lr_val, sizeof(lr_val));
     }
 }
 
 void gic_restore_lrs()
 {
-    int i = 0;
-
-    ASSERT(!is_idle_vcpu(current));
-
-    for ( i = 0; i < gicv2_info.nr_lrs; i++ )
-        writel_gich(current->arch.gic.v2.lr[i], GICH_LR + i * 4);
 }
 
-
+#if 0
 void gic_clear_lrs(struct vcpu *v)
 {
     int i = 0;
@@ -649,6 +645,7 @@ void gic_clear_lrs(struct vcpu *v)
 
     spin_unlock_irqrestore(&v->arch.vgic.lock, flags);
 }
+#endif
 
 static void gic_restore_pending_irqs(struct vcpu *v)
 {
