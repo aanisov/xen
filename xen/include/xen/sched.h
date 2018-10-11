@@ -266,6 +266,7 @@ struct vcpu
 
     struct arch_vcpu arch;
     struct vcpu *prev;
+    int visible_lrs_num;
 };
 
 /* Per-domain lock can be recursively acquired in fault handlers. */

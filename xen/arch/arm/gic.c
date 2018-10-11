@@ -608,18 +608,8 @@ void gic_store_lrs()
 
     ASSERT(!is_idle_vcpu(current));
 
-    current->visible_lrs = this_cpu(lr_count);
-
-    for ( i = 0; i < current->visible_lrs; i++ )
-    {
-        gic_hw_ops->read_lr(i, &lr_val);
-        p = irq_to_pending(current, lr_val.virq);
-        memcpy(p->lr_val, lr_val, sizeof(lr_val));
-    }
-}
-
-void gic_restore_lrs()
-{
+    current->visible_lrs_num = this_cpu(lr_count);
+    gic_hw_ops->store_raw_lrs(current->arch.gic.v2.lr, current->visible_lrs_num);
 }
 
 #if 0
@@ -756,7 +746,15 @@ void gic_inject(void)
 {
     ASSERT(!local_irq_is_enabled());
 
-    gic_restore_pending_irqs(current);
+    spin_lock(&current->arch.vgic.lock);
+
+    /*
+     *
+     */
+    spin_unlock(&current->arch.vgic.lock);
+
+//    gic_restore_pending_irqs(current);
+    
 
     if ( !list_empty(&current->arch.vgic.lr_pending) && lr_all_full() )
         gic_hw_ops->update_hcr_status(GICH_HCR_UIE, true);

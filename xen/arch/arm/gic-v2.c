@@ -1232,6 +1232,15 @@ static void gicv2_do_LPI(unsigned int lpi)
     BUG();
 }
 
+static void gicv2_store_raw_lrs(void *store, int n)
+{
+    int i;
+    ASSERT(n < gicv2_info.nr_lrs);
+    
+    for ( i = 0; i < n; i++ )
+        (uint32_t*)(store)[i] = readl_gich(GICH_LR + i * 4);
+}
+
 const static struct gic_hw_operations gicv2_ops = {
     .info                = &gicv2_info,
     .init                = gicv2_init,
@@ -1261,6 +1270,7 @@ const static struct gic_hw_operations gicv2_ops = {
     .map_hwdom_extra_mappings = gicv2_map_hwdown_extra_mappings,
     .iomem_deny_access   = gicv2_iomem_deny_access,
     .do_LPI              = gicv2_do_LPI,
+    .store_raw_lrs       = gicv2_store_raw_lrs,
 };
 
 /* Set up the GIC */
