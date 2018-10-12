@@ -784,16 +784,12 @@ void gic_interrupt(struct cpu_user_regs *regs, int is_fiq)
         irq = gic_hw_ops->read_irq();
         if ( likely(irq > 32 && irq < 1020) )
         {
-            local_irq_enable();
             do_IRQ(regs, irq, is_fiq);
-            local_irq_disable();
         }
 #ifdef CONFIG_HAS_GICV3
         else if ( is_lpi(irq) )
         {
-            local_irq_enable();
             gic_hw_ops->do_LPI(irq);
-            local_irq_disable();
         }
 #endif
         else if ( irq < 16 )
