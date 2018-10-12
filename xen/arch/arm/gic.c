@@ -750,6 +750,76 @@ void gic_inject(void)
 
     spin_lock(&v->arch.vgic.lock);
 
+    for (i = 0; i < &this_cpu(lr_count), i++)
+    {
+        struct pending_irq *p;
+        int irq;
+        struct gic_lr lr_val;
+    
+        ASSERT(spin_is_locked(&v->arch.vgic.lock));
+        ASSERT(!local_irq_is_enabled());
+    
+        gic_hw_ops->read_lr(i, &lr_val);
+        irq = lr_val.virq;
+        p = irq_to_pending(v, irq);
+
+        if ( lr_val.state & GICH_LR_ACTIVE )
+        {
+            set_bit(GIC_IRQ_GUEST_ACTIVE, &p->status);
+            if ( test_bit(GIC_IRQ_GUEST_ENABLED, &p->status) &&
+                 test_and_clear_bit(GIC_IRQ_GUEST_QUEUED, &p->status) )
+            {
+                if ( p->desc == NULL )
+                {
+                     lr_val.state |= GICH_LR_PENDING;
+                     gic_hw_ops->write_lr(i, &lr_val);
+                }
+                else
+                    gdprintk(XENLOG_WARNING, "unable to inject hw irq=%d into d%dv%d: already active in LR%d\n",
+                             irq, v->domain->domain_id, v->vcpu_id, i);
+            }
+        }
+        else if ( lr_val.state & GICH_LR_PENDING )
+        {
+            int q __attribute__ ((unused)) = test_and_clear_bit(GIC_IRQ_GUEST_QUEUED, &p->status);
+#ifdef GIC_DEBUG
+            if ( q )
+                gdprintk(XENLOG_DEBUG, "trying to inject irq=%d into d%dv%d, when it is already pending in LR%d\n",
+                        irq, v->domain->domain_id, v->vcpu_id, i);
+#endif
+        }
+        else
+        {
+            gic_hw_ops->clear_lr(i);
+            clear_bit(i, &this_cpu(lr_mask));
+    
+            if ( p->desc != NULL )
+                clear_bit(_IRQ_INPROGRESS, &p->desc->status);
+            clear_bit(GIC_IRQ_GUEST_VISIBLE, &p->status);
+            clear_bit(GIC_IRQ_GUEST_ACTIVE, &p->status);
+            p->lr = GIC_INVALID_LR;
+            if ( test_bit(GIC_IRQ_GUEST_ENABLED, &p->status) &&
+                 test_bit(GIC_IRQ_GUEST_QUEUED, &p->status) &&
+                 !test_bit(GIC_IRQ_GUEST_MIGRATING, &p->status) )
+                gic_raise_guest_irq(v, irq, p->priority);
+            else {
+                list_del_init(&p->inflight);
+                /*
+                 * Remove from inflight, then change physical affinity. It
+                 * makes sure that when a new interrupt is received on the
+                 * next pcpu, inflight is already cleared. No concurrent
+                 * accesses to inflight.
+                 */
+                smp_wmb();
+                if ( test_bit(GIC_IRQ_GUEST_MIGRATING, &p->status) )
+                {
+                    struct vcpu *v_target = vgic_get_target_vcpu(v, irq);
+                    irq_set_affinity(p->desc, cpumask_of(v_target->processor));
+                    clear_bit(GIC_IRQ_GUEST_MIGRATING, &p->status);
+                }
+            }
+        }
+    }
     /*
      *
      */
