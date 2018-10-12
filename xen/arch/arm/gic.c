@@ -757,10 +757,7 @@ void gic_inject(void)
         struct pending_irq *p;
         int irq;
         struct gic_lr lr_val;
-    
-        ASSERT(spin_is_locked(&v->arch.vgic.lock));
-        ASSERT(!local_irq_is_enabled());
-    
+
         gic_hw_ops->read_lr(i, &lr_val);
         irq = lr_val.virq;
         p = irq_to_pending(v, irq);
@@ -774,15 +771,34 @@ void gic_inject(void)
                  lr_val.state |= GICH_LR_PENDING;
                  gic_hw_ops->write_lr(i, &lr_val);
             }
+            /* We can't concurrent an active IRQ */
+            continue;
         }
         else if ( lr_val.state & GICH_LR_PENDING )
         {
-            clear_bit(GIC_IRQ_GUEST_QUEUED, &p->status);
+            /*We might replace the pending IRQ*/
+            list_for_each_entry ( iter, &v->arch.vgic.inflight_irqs, inflight )
+            {
+                if ( iter == p )
+                {/*we reached this irq from the top of the sorted list, leave it here, clear possible odd flag*/
+                    clear_bit(GIC_IRQ_GUEST_QUEUED, &p->status);
+                    break;
+                }
+                else 
+                    if ( test_bit(GIC_IRQ_GUEST_ENABLED, &iter->status) &&
+                         test_bit(GIC_IRQ_GUEST_QUEUED, &iter->status) &&
+                         !test_bit(GIC_IRQ_GUEST_MIGRATING, &iter->status) &&
+                         !test_bit(GIC_IRQ_GUEST_VISIBLE, &iter->status))
+                { /*This IRQ is ready to be injected, so pick it, and reset current irq state*/
+                    gic_set_lr(i, iter, GICH_LR_PENDING);
+                    clear_bit(GIC_IRQ_GUEST_VISIBLE, &p->status);
+                    set_bit(GIC_IRQ_GUEST_QUEUED, &p->status);
+                }
+            }
         }
         else
         {
             gic_hw_ops->clear_lr(i);
-
             if ( p->desc != NULL )
                 clear_bit(_IRQ_INPROGRESS, &p->desc->status);
             clear_bit(GIC_IRQ_GUEST_VISIBLE, &p->status);
@@ -805,7 +821,18 @@ void gic_inject(void)
                     clear_bit(GIC_IRQ_GUEST_MIGRATING, &p->status);
                 }
             }
-            
+
+            list_for_each_entry ( iter, &v->arch.vgic.inflight_irqs, inflight )
+            { /*find an IRQ to put into the empty slot*/
+                if ( test_bit(GIC_IRQ_GUEST_ENABLED, &iter->status) &&
+                     test_bit(GIC_IRQ_GUEST_QUEUED, &iter->status) &&
+                     !test_bit(GIC_IRQ_GUEST_MIGRATING, &iter->status) &&
+                     !test_bit(GIC_IRQ_GUEST_VISIBLE, &iter->status))
+                { /*This IRQ is ready to be injected, so pick it, and reset current irq state*/
+                    gic_set_lr(i, iter, GICH_LR_PENDING);
+                    break;
+                }
+            }
         }
     }
     /*
