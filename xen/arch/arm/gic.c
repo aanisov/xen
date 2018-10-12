@@ -746,6 +746,8 @@ void gic_inject(void)
 {
     struct pending_irq *iter;
     struct vcpu *v = current;
+    int i;
+    
     ASSERT(!local_irq_is_enabled());
 
     spin_lock(&v->arch.vgic.lock);
@@ -769,40 +771,25 @@ void gic_inject(void)
             if ( test_bit(GIC_IRQ_GUEST_ENABLED, &p->status) &&
                  test_and_clear_bit(GIC_IRQ_GUEST_QUEUED, &p->status) )
             {
-                if ( p->desc == NULL )
-                {
-                     lr_val.state |= GICH_LR_PENDING;
-                     gic_hw_ops->write_lr(i, &lr_val);
-                }
-                else
-                    gdprintk(XENLOG_WARNING, "unable to inject hw irq=%d into d%dv%d: already active in LR%d\n",
-                             irq, v->domain->domain_id, v->vcpu_id, i);
+                 lr_val.state |= GICH_LR_PENDING;
+                 gic_hw_ops->write_lr(i, &lr_val);
             }
         }
         else if ( lr_val.state & GICH_LR_PENDING )
         {
-            int q __attribute__ ((unused)) = test_and_clear_bit(GIC_IRQ_GUEST_QUEUED, &p->status);
-#ifdef GIC_DEBUG
-            if ( q )
-                gdprintk(XENLOG_DEBUG, "trying to inject irq=%d into d%dv%d, when it is already pending in LR%d\n",
-                        irq, v->domain->domain_id, v->vcpu_id, i);
-#endif
+            clear_bit(GIC_IRQ_GUEST_QUEUED, &p->status);
         }
         else
         {
             gic_hw_ops->clear_lr(i);
-            clear_bit(i, &this_cpu(lr_mask));
-    
+
             if ( p->desc != NULL )
                 clear_bit(_IRQ_INPROGRESS, &p->desc->status);
             clear_bit(GIC_IRQ_GUEST_VISIBLE, &p->status);
             clear_bit(GIC_IRQ_GUEST_ACTIVE, &p->status);
             p->lr = GIC_INVALID_LR;
-            if ( test_bit(GIC_IRQ_GUEST_ENABLED, &p->status) &&
-                 test_bit(GIC_IRQ_GUEST_QUEUED, &p->status) &&
-                 !test_bit(GIC_IRQ_GUEST_MIGRATING, &p->status) )
-                gic_raise_guest_irq(v, irq, p->priority);
-            else {
+            if ( !test_bit(GIC_IRQ_GUEST_QUEUED, &p->status) )
+            {
                 list_del_init(&p->inflight);
                 /*
                  * Remove from inflight, then change physical affinity. It
@@ -818,6 +805,7 @@ void gic_inject(void)
                     clear_bit(GIC_IRQ_GUEST_MIGRATING, &p->status);
                 }
             }
+            
         }
     }
     /*
