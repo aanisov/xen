@@ -744,14 +744,24 @@ out:
 
 void gic_inject(void)
 {
+    struct pending_irq *iter;
+    struct vcpu *v = current;
     ASSERT(!local_irq_is_enabled());
 
-    spin_lock(&current->arch.vgic.lock);
+    spin_lock(&v->arch.vgic.lock);
 
     /*
      *
      */
-    spin_unlock(&current->arch.vgic.lock);
+    list_for_each_entry ( iter, &v->arch.vgic.inflight_irqs, inflight )
+    {
+        if ( iter->priority > priority )
+        {
+            list_add_tail(&n->inflight, &iter->inflight);
+            goto out;
+        }
+    }
+    spin_unlock(&v->arch.vgic.lock);
 
 //    gic_restore_pending_irqs(current);
     
