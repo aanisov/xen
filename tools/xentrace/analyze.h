@@ -16,7 +16,7 @@
 
 #define TRC_LOST_RECORDS_END    (TRC_GEN + 50)
 
-#define NR_CPUS 128
+#define NR_CPUS 8
 #if __x86_64__
 # define BITS_PER_LONG 64
 #else
