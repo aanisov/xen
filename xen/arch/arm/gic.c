@@ -610,6 +610,8 @@ void gic_clear_lrs(struct vcpu *v)
     if ( is_idle_vcpu(v) )
         return;
 
+    gic_hw_ops->fetch_lrs(v, &this_cpu(lr_mask));
+
     spin_lock_irqsave(&v->arch.vgic.lock, flags);
 
     while ((i = find_next_bit((const unsigned long *) &this_cpu(lr_mask),
@@ -731,6 +733,8 @@ void gic_inject(void)
     ASSERT(!local_irq_is_enabled());
 
     gic_restore_pending_irqs(current);
+
+    gic_hw_ops->push_lrs(current, &this_cpu(lr_mask));
 
     if ( !list_empty(&current->arch.vgic.lr_pending) && lr_all_full() )
         gic_hw_ops->update_hcr_status(GICH_HCR_UIE, true);
