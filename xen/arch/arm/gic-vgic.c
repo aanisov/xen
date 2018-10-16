@@ -282,6 +282,7 @@ void vgic_sync_from_lrs(struct vcpu *v)
         return;
 
     gic_hw_ops->update_hcr_status(GICH_HCR_UIE, false);
+    gic_hw_ops->fetch_lrs(v);
 
     spin_lock(&v->arch.vgic.lock);
 
@@ -410,11 +411,14 @@ int vgic_vcpu_pending_irq(struct vcpu *v)
 
 void vgic_sync_to_lrs(void)
 {
+    struct vcpu *v = current;
     ASSERT(!local_irq_is_enabled());
 
-    gic_restore_pending_irqs(current);
+    gic_restore_pending_irqs(v);
 
-    if ( !list_empty(&current->arch.vgic.lr_pending) && lr_all_full() )
+    gic_hw_ops->push_lrs(v);
+
+    if ( !list_empty(&v->arch.vgic.lr_pending) && lr_all_full() )
         gic_hw_ops->update_hcr_status(GICH_HCR_UIE, true);
 }
 

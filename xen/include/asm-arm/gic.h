@@ -187,6 +187,7 @@ struct gic_v2 {
     uint32_t vmcr;
     uint32_t apr;
     uint32_t lr[64];
+    uint64_t lr_update_mask;
 };
 
 /*
@@ -384,6 +385,8 @@ struct gic_hw_operations {
     int (*iomem_deny_access)(const struct domain *d);
     /* Handle LPIs, which require special handling */
     void (*do_LPI)(unsigned int lpi);
+    void (*fetch_lrs) (struct vcpu *v);
+    void (*push_lrs) (struct vcpu *v);
 };
 
 extern const struct gic_hw_operations *gic_hw_ops;
