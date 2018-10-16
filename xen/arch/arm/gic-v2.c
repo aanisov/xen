@@ -173,15 +173,6 @@ static unsigned int gicv2_cpu_mask(const cpumask_t *cpumask)
 
 static void gicv2_save_state(struct vcpu *v)
 {
-    int i;
-
-    /* No need for spinlocks here because interrupts are disabled around
-     * this call and it only accesses struct vcpu fields that cannot be
-     * accessed simultaneously by another pCPU.
-     */
-    for ( i = 0; i < gicv2_info.nr_lrs; i++ )
-        v->arch.gic.v2.lr[i] = readl_gich(GICH_LR + i * 4);
-
     v->arch.gic.v2.apr = readl_gich(GICH_APR);
     v->arch.gic.v2.vmcr = readl_gich(GICH_VMCR);
     /* Disable until next VCPU scheduled */
@@ -190,11 +181,6 @@ static void gicv2_save_state(struct vcpu *v)
 
 static void gicv2_restore_state(const struct vcpu *v)
 {
-    int i;
-
-    for ( i = 0; i < gicv2_info.nr_lrs; i++ )
-        writel_gich(v->arch.gic.v2.lr[i], GICH_LR + i * 4);
-
     writel_gich(v->arch.gic.v2.apr, GICH_APR);
     writel_gich(v->arch.gic.v2.vmcr, GICH_VMCR);
     writel_gich(GICH_HCR_EN, GICH_HCR);
@@ -445,19 +431,23 @@ static void gicv2_update_lr(int lr, const struct pending_irq *p,
         lr_reg |= GICH_V2_LR_HW | ((p->desc->irq & GICH_V2_LR_PHYSICAL_MASK )
                                    << GICH_V2_LR_PHYSICAL_SHIFT);
 
-    writel_gich(lr_reg, GICH_LR + lr * 4);
+//    writel_gich(lr_reg, GICH_LR + lr * 4);
+    current->arch.gic.v2.lr[lr] = lr_reg;
 }
 
 static void gicv2_clear_lr(int lr)
 {
-    writel_gich(0, GICH_LR + lr * 4);
+    current->arch.gic.v2.lr[lr] = 0;
+
+//    writel_gich(0, GICH_LR + lr * 4);
 }
 
 static void gicv2_read_lr(int lr, struct gic_lr *lr_reg)
 {
     uint32_t lrv;
 
-    lrv          = readl_gich(GICH_LR + lr * 4);
+//    lrv          = readl_gich(GICH_LR + lr * 4);
+    lrv          = current->arch.gic.v2.lr[lr];
     lr_reg->pirq = (lrv >> GICH_V2_LR_PHYSICAL_SHIFT) & GICH_V2_LR_PHYSICAL_MASK;
     lr_reg->virq = (lrv >> GICH_V2_LR_VIRTUAL_SHIFT) & GICH_V2_LR_VIRTUAL_MASK;
     lr_reg->priority = (lrv >> GICH_V2_LR_PRIORITY_SHIFT) & GICH_V2_LR_PRIORITY_MASK;
@@ -480,7 +470,27 @@ static void gicv2_write_lr(int lr, const struct gic_lr *lr_reg)
                                        << GICH_V2_LR_HW_SHIFT)  |
           ((uint32_t)(lr_reg->grp & GICH_V2_LR_GRP_MASK) << GICH_V2_LR_GRP_SHIFT) );
 
-    writel_gich(lrv, GICH_LR + lr * 4);
+//    writel_gich(lrv, GICH_LR + lr * 4);
+    current->arch.gic.v2.lr[lr] = lrv;
+}
+
+void gicv2_fetch_lrs(struct vcpu *v, uint64_t *mask)
+{
+    int i;
+
+    for ( i = 0; i < gicv2_info.nr_lrs; i++ )
+        if ( test_bit(i, mask) )
+            v->arch.gic.v2.lr[i] = readl_gich(GICH_LR + i * 4);
+        else
+            v->arch.gic.v2.lr[i] = 0;
+}
+
+void gicv2_push_lrs(struct vcpu *v, uint64_t *mask)
+{
+    int i;
+
+    for ( i = 0; i < gicv2_info.nr_lrs; i++ )
+        writel_gich(v->arch.gic.v2.lr[i], GICH_LR + i * 4);
 }
 
 static void gicv2_hcr_status(uint32_t flag, bool status)
@@ -1260,6 +1270,8 @@ const static struct gic_hw_operations gicv2_ops = {
     .map_hwdom_extra_mappings = gicv2_map_hwdown_extra_mappings,
     .iomem_deny_access   = gicv2_iomem_deny_access,
     .do_LPI              = gicv2_do_LPI,
+    .fetch_lrs           = gicv2_fetch_lrs,
+    .push_lrs            = gicv2_push_lrs,
 };
 
 /* Set up the GIC */
