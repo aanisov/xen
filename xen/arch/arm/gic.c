@@ -36,15 +36,13 @@
 #include <asm/vgic.h>
 #include <asm/acpi.h>
 
-static void gic_restore_pending_irqs(struct vcpu *v);
-
 static DEFINE_PER_CPU(uint64_t, lr_mask);
 
 #define lr_all_full() (this_cpu(lr_mask) == ((1 << gic_hw_ops->info->nr_lrs) - 1))
 
 #undef GIC_DEBUG
 
-static void gic_update_one_lr(struct vcpu *v, int i);
+static void gic_update_one_lr(int i);
 
 static const struct gic_hw_operations *gic_hw_ops;
 
@@ -458,14 +456,13 @@ void gic_raise_inflight_irq(struct vcpu *v, struct pending_irq *n)
  * event gets discarded while the LPI is in an LR, and a new LPI with the
  * same number gets mapped quickly afterwards.
  */
-static unsigned int gic_find_unused_lr(struct vcpu *v,
-                                       struct pending_irq *p,
+static unsigned int gic_find_unused_lr(struct pending_irq *p,
                                        unsigned int lr)
 {
     unsigned int nr_lrs = gic_hw_ops->info->nr_lrs;
     unsigned long *lr_mask = (unsigned long *) &this_cpu(lr_mask);
 
-    ASSERT(spin_is_locked(&v->arch.vgic.lock));
+    ASSERT(spin_is_locked(&current->arch.vgic.lock));
 
 #ifdef CONFIG_HAS_GICV3
     if ( unlikely(test_bit(GIC_IRQ_GUEST_PRISTINE_LPI, &p->status)) )
@@ -518,11 +515,12 @@ void gic_raise_guest_irq(struct vcpu *v, unsigned int virtual_irq,
     gic_add_to_lr_pending(v, p);
 }
 
-static void gic_update_one_lr(struct vcpu *v, int i)
+static void gic_update_one_lr(int i)
 {
     struct pending_irq *p;
     int irq;
     struct gic_lr lr_val;
+    struct vcpu *v = current;
 
     ASSERT(spin_is_locked(&v->arch.vgic.lock));
     ASSERT(!local_irq_is_enabled());
@@ -602,47 +600,32 @@ static void gic_update_one_lr(struct vcpu *v, int i)
     }
 }
 
-void gic_clear_lrs(struct vcpu *v)
-{
-    int i = 0;
-    unsigned long flags;
-    unsigned int nr_lrs = gic_hw_ops->info->nr_lrs;
-
-    /* The idle domain has no LRs to be cleared. Since gic_restore_state
-     * doesn't write any LR registers for the idle domain they could be
-     * non-zero. */
-    if ( is_idle_vcpu(v) )
-        return;
-
-    spin_lock_irqsave(&v->arch.vgic.lock, flags);
-
-    while ((i = find_next_bit((const unsigned long *) &this_cpu(lr_mask),
-                              nr_lrs, i)) < nr_lrs ) {
-        gic_update_one_lr(v, i);
-        i++;
-    }
-
-    spin_unlock_irqrestore(&v->arch.vgic.lock, flags);
-}
-
-static void gic_restore_pending_irqs(struct vcpu *v)
+static void gic_update_lrs(void)
 {
     int lr = 0;
     struct pending_irq *p, *t, *p_r;
     struct list_head *inflight_r;
-    unsigned long flags;
     unsigned int nr_lrs = gic_hw_ops->info->nr_lrs;
     int lrs = nr_lrs;
+    struct vcpu *v = current;
+    int i = 0;
+
+    spin_lock(&v->arch.vgic.lock);
+    while ((i = find_next_bit((const unsigned long *) &this_cpu(lr_mask),
+                              nr_lrs, i)) < nr_lrs ) {
+        gic_update_one_lr(i);
+        i++;
+    }
+    spin_unlock(&v->arch.vgic.lock);
 
     if ( list_empty(&v->arch.vgic.lr_pending) )
         return;
 
-    spin_lock_irqsave(&v->arch.vgic.lock, flags);
-
+    spin_lock(&v->arch.vgic.lock);
     inflight_r = &v->arch.vgic.inflight_irqs;
     list_for_each_entry_safe ( p, t, &v->arch.vgic.lr_pending, lr_queue )
     {
-        lr = gic_find_unused_lr(v, p, lr);
+        lr = gic_find_unused_lr(p, lr);
         if ( lr >= nr_lrs )
         {
             /* No more free LRs: find a lower priority irq to evict */
@@ -676,9 +659,8 @@ found:
         if ( lrs == 0 )
             break;
     }
-
 out:
-    spin_unlock_irqrestore(&v->arch.vgic.lock, flags);
+    spin_unlock(&v->arch.vgic.lock);
 }
 
 void gic_clear_pending_irqs(struct vcpu *v)
@@ -736,9 +718,7 @@ void gic_inject(void)
 
     gic_hw_ops->fetch_lrs(current, &this_cpu(lr_mask));
 
-    gic_clear_lrs(current);
-
-    gic_restore_pending_irqs(current);
+    gic_update_lrs();
 
     gic_hw_ops->push_lrs(current, &this_cpu(lr_mask));
 
