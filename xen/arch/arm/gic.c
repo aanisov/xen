@@ -437,6 +437,7 @@ void gic_raise_inflight_irq(struct vcpu *v, struct pending_irq *n)
     if ( !test_bit(GIC_IRQ_GUEST_ENABLED, &n->status) )
         return;
 
+#if 0
     if ( list_empty(&n->lr_queue) )
     {
         if ( v == current )
@@ -446,6 +447,7 @@ void gic_raise_inflight_irq(struct vcpu *v, struct pending_irq *n)
     else
         gdprintk(XENLOG_DEBUG, "trying to inject irq=%u into d%dv%d, when it is still lr_pending\n",
                  virtual_irq, v->domain->domain_id, v->vcpu_id);
+#endif
 #endif
 }
 
@@ -488,8 +490,8 @@ static unsigned int gic_find_unused_lr(struct vcpu *v,
 void gic_raise_guest_irq(struct vcpu *v, unsigned int virtual_irq,
         unsigned int priority)
 {
-    int i;
-    unsigned int nr_lrs = gic_hw_ops->info->nr_lrs;
+//    int i;
+//    unsigned int nr_lrs = gic_hw_ops->info->nr_lrs;
     struct pending_irq *p = irq_to_pending(v, virtual_irq);
 
     ASSERT(spin_is_locked(&v->arch.vgic.lock));
@@ -500,6 +502,7 @@ void gic_raise_guest_irq(struct vcpu *v, unsigned int virtual_irq,
         return;
 #endif
 
+#if 0
     if ( v == current && list_empty(&v->arch.vgic.lr_pending) )
     {
         i = gic_find_unused_lr(v, p, 0);
@@ -510,6 +513,7 @@ void gic_raise_guest_irq(struct vcpu *v, unsigned int virtual_irq,
             return;
         }
     }
+#endif
 
     gic_add_to_lr_pending(v, p);
 }
@@ -609,8 +613,6 @@ void gic_clear_lrs(struct vcpu *v)
      * non-zero. */
     if ( is_idle_vcpu(v) )
         return;
-
-    gic_hw_ops->fetch_lrs(v, &this_cpu(lr_mask));
 
     spin_lock_irqsave(&v->arch.vgic.lock, flags);
 
@@ -731,6 +733,10 @@ out:
 void gic_inject(void)
 {
     ASSERT(!local_irq_is_enabled());
+
+    gic_hw_ops->fetch_lrs(current, &this_cpu(lr_mask));
+
+    gic_clear_lrs(current);
 
     gic_restore_pending_irqs(current);
 
