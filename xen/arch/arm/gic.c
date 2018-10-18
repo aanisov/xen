@@ -76,7 +76,12 @@ void gic_save_state(struct vcpu *v)
      * accessed simultaneously by another pCPU.
      */
     v->arch.lr_mask = this_cpu(lr_mask);
-    gic_hw_ops->save_state(v);
+    if ( ! v->arch.lr_stored )
+    {
+        gic_hw_ops->save_state(v);
+        v->arch.lr_stored = true;
+    }
+
     isb();
 }
 
@@ -86,9 +91,6 @@ void gic_restore_state(struct vcpu *v)
     ASSERT(!is_idle_vcpu(v));
 
     this_cpu(lr_mask) = v->arch.lr_mask;
-    gic_hw_ops->restore_state(v);
-
-    isb();
 }
 
 /* desc->irq needs to be disabled before calling this function */
@@ -670,6 +672,8 @@ void gic_clear_pending_irqs(struct vcpu *v)
     ASSERT(spin_is_locked(&v->arch.vgic.lock));
 
     v->arch.lr_mask = 0;
+    v->arch.lr_stored = 1;
+
     list_for_each_entry_safe ( p, t, &v->arch.vgic.lr_pending, lr_queue )
         gic_remove_from_lr_pending(v, p);
 }
@@ -714,15 +718,23 @@ out:
 
 void gic_inject(void)
 {
+    struct vcpu *v = current;
     ASSERT(!local_irq_is_enabled());
 
-    gic_hw_ops->fetch_lrs(current, &this_cpu(lr_mask));
+    if ( !v->arch.lr_stored )
+        gic_hw_ops->fetch_lrs(v, &this_cpu(lr_mask));
 
     gic_update_lrs();
 
-    gic_hw_ops->push_lrs(current, &this_cpu(lr_mask));
+    if ( v->arch.lr_stored )
+    {
+        gic_hw_ops->restore_state(v);
+        v->arch.lr_stored = false;
+    }
+    else
+        gic_hw_ops->push_lrs(v, &this_cpu(lr_mask));
 
-    if ( !list_empty(&current->arch.vgic.lr_pending) && lr_all_full() )
+    if ( !list_empty(&v->arch.vgic.lr_pending) && lr_all_full() )
         gic_hw_ops->update_hcr_status(GICH_HCR_UIE, true);
     else
         gic_hw_ops->update_hcr_status(GICH_HCR_UIE, false);

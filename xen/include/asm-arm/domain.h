@@ -246,6 +246,7 @@ struct arch_vcpu
     /* Holds gic context data */
     union gic_state_data gic;
     uint64_t lr_mask;
+    bool lr_stored;
 
     struct {
         /*
