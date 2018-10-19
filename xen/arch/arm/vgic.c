@@ -70,7 +70,6 @@ void vgic_init_pending_irq(struct pending_irq *p, unsigned int virq)
 
     memset(p, 0, sizeof(*p));
     INIT_LIST_HEAD(&p->inflight);
-    INIT_LIST_HEAD(&p->lr_queue);
     p->irq = virq;
 #ifdef CONFIG_HAS_GICV3
     p->lpi_vcpu_id = INVALID_VCPU_ID;
@@ -216,7 +215,6 @@ int vcpu_vgic_init(struct vcpu *v)
         vgic_init_pending_irq(&v->arch.vgic.pending_irqs[i], i);
 
     INIT_LIST_HEAD(&v->arch.vgic.inflight_irqs);
-    INIT_LIST_HEAD(&v->arch.vgic.lr_pending);
     spin_lock_init(&v->arch.vgic.lock);
 
     return 0;
@@ -285,8 +283,12 @@ bool vgic_migrate_irq(struct vcpu *old, struct vcpu *new, unsigned int irq)
         spin_unlock_irqrestore(&old->arch.vgic.lock, flags);
         return true;
     }
-    /* If the IRQ is still lr_pending, re-inject it to the new vcpu */
-    if ( !list_empty(&p->lr_queue) )
+    /* If the IRQ is still guest, re-inject it to the new vcpu */
+    if ( test_bit(GIC_IRQ_GUEST_VISIBLE, &p->status) )
+    /* if the IRQ is in a GICH_LR register, set GIC_IRQ_GUEST_MIGRATING
+     * and wait for the EOI or being intercepted while being pending */
+        set_bit(GIC_IRQ_GUEST_MIGRATING, &p->status);
+    else
     {
         gic_remove_irq_from_queues(old, p);
         irq_set_affinity(p->desc, cpumask_of(new->processor));
@@ -294,10 +296,6 @@ bool vgic_migrate_irq(struct vcpu *old, struct vcpu *new, unsigned int irq)
         vgic_vcpu_inject_irq(new, irq);
         return true;
     }
-    /* if the IRQ is in a GICH_LR register, set GIC_IRQ_GUEST_MIGRATING
-     * and wait for the EOI */
-    if ( !list_empty(&p->inflight) )
-        set_bit(GIC_IRQ_GUEST_MIGRATING, &p->status);
 
     spin_unlock_irqrestore(&old->arch.vgic.lock, flags);
     return true;
@@ -356,7 +354,6 @@ void vgic_disable_irqs(struct vcpu *v, uint32_t r, int n)
         spin_lock_irqsave(&v_target->arch.vgic.lock, flags);
         p = irq_to_pending(v_target, irq);
         clear_bit(GIC_IRQ_GUEST_ENABLED, &p->status);
-        gic_remove_from_lr_pending(v_target, p);
         desc = p->desc;
         spin_unlock_irqrestore(&v_target->arch.vgic.lock, flags);
 
@@ -407,8 +404,6 @@ void vgic_enable_irqs(struct vcpu *v, uint32_t r, int n)
         spin_lock_irqsave(&v_target->arch.vgic.lock, flags);
         p = irq_to_pending(v_target, irq);
         set_bit(GIC_IRQ_GUEST_ENABLED, &p->status);
-        if ( !list_empty(&p->inflight) && !test_bit(GIC_IRQ_GUEST_VISIBLE, &p->status) )
-            gic_add_to_lr_pending(v_target, p);
         spin_unlock_irqrestore(&v_target->arch.vgic.lock, flags);
         if ( p->desc != NULL )
         {
@@ -560,10 +555,6 @@ void vgic_vcpu_inject_irq(struct vcpu *v, unsigned int virq)
         priority = vgic_get_virq_priority(v, virq);
 
     n->priority = priority;
-
-    /* the irq is enabled */
-    if ( test_bit(GIC_IRQ_GUEST_ENABLED, &n->status) )
-        gic_add_to_lr_pending(v, n);
 
     list_for_each_entry ( iter, &v->arch.vgic.inflight_irqs, inflight )
     {

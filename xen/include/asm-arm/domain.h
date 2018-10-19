@@ -259,18 +259,10 @@ struct arch_vcpu
         /* This list is ordered by IRQ priority and it is used to keep
          * track of the IRQs that the VGIC injected into the guest.
          * Depending on the availability of LR registers, the IRQs might
-         * actually be in an LR, and therefore injected into the guest,
-         * or queued in gic.lr_pending.
+         * actually be in an LR, and therefore injected into the guest.
          * As soon as an IRQ is EOI'd by the guest and removed from the
          * corresponding LR it is also removed from this list. */
         struct list_head inflight_irqs;
-        /* lr_pending is used to queue IRQs (struct pending_irq) that the
-         * vgic tried to inject in the guest (calling gic_set_guest_irq) but
-         * no LRs were available at the time.
-         * As soon as an LR is freed we remove the first IRQ from this
-         * list and write it to the LR register.
-         * lr_pending is a subset of vgic.inflight_irqs. */
-        struct list_head lr_pending;
         spinlock_t lock;
 
         /* GICv3: redistributor base and flags for this vCPU */
