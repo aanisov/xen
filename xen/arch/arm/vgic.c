@@ -63,14 +63,18 @@ struct vgic_irq_rank *vgic_rank_irq(struct vcpu *v, unsigned int irq)
 
 void vgic_init_pending_irq(struct pending_irq *p, unsigned int virq)
 {
+#ifdef CONFIG_HAS_GICV3
     /* The lpi_vcpu_id field must be big enough to hold a VCPU ID. */
     BUILD_BUG_ON(BIT(sizeof(p->lpi_vcpu_id) * 8) < MAX_VIRT_CPUS);
+#endif
 
     memset(p, 0, sizeof(*p));
     INIT_LIST_HEAD(&p->inflight);
     INIT_LIST_HEAD(&p->lr_queue);
     p->irq = virq;
+#ifdef CONFIG_HAS_GICV3
     p->lpi_vcpu_id = INVALID_VCPU_ID;
+#endif
 }
 
 static void vgic_rank_init(struct vgic_irq_rank *rank, uint8_t index,
@@ -533,8 +537,8 @@ void vgic_vcpu_inject_irq(struct vcpu *v, unsigned int virq)
     }
 
     n = irq_to_pending(v, virq);
-    /* If an LPI has been removed, there is nothing to inject here. */
 #ifdef CONFIG_HAS_GICV3
+    /* If an LPI has been removed, there is nothing to inject here. */
     if ( unlikely(!n) )
     {
         return;
