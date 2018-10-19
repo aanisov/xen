@@ -388,7 +388,7 @@ static inline void gic_set_lr(int lr, struct pending_irq *p,
     p->lr = lr;
 }
 
-static inline void gic_add_to_lr_pending(struct vcpu *v, struct pending_irq *n)
+void gic_add_to_lr_pending(struct vcpu *v, struct pending_irq *n)
 {
     struct pending_irq *iter;
 
@@ -459,37 +459,6 @@ static unsigned int gic_find_unused_lr(struct pending_irq *p,
     return lr;
 }
 
-void gic_raise_guest_irq(struct vcpu *v, unsigned int virtual_irq,
-        unsigned int priority)
-{
-//    int i;
-//    unsigned int nr_lrs = gic_hw_ops->info->nr_lrs;
-    struct pending_irq *p = irq_to_pending(v, virtual_irq);
-
-    ASSERT(spin_is_locked(&v->arch.vgic.lock));
-
-#ifdef CONFIG_HAS_GICV3
-    if ( unlikely(!p) )
-        /* An unmapped LPI does not need to be raised. */
-        return;
-#endif
-
-#if 0
-    if ( v == current && list_empty(&v->arch.vgic.lr_pending) )
-    {
-        i = gic_find_unused_lr(v, p, 0);
-
-        if (i < nr_lrs) {
-            set_bit(i, &this_cpu(lr_mask));
-            gic_set_lr(i, p, GICH_LR_PENDING);
-            return;
-        }
-    }
-#endif
-
-    gic_add_to_lr_pending(v, p);
-}
-
 static void gic_update_one_lr(int i)
 {
     struct pending_irq *p;
@@ -555,7 +524,7 @@ static void gic_update_one_lr(int i)
         if ( test_bit(GIC_IRQ_GUEST_ENABLED, &p->status) &&
              test_bit(GIC_IRQ_GUEST_QUEUED, &p->status) &&
              !test_bit(GIC_IRQ_GUEST_MIGRATING, &p->status) )
-            gic_raise_guest_irq(v, irq, p->priority);
+            gic_add_to_lr_pending(v, p);
         else {
             list_del_init(&p->inflight);
             /*
