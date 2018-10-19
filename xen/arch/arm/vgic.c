@@ -547,7 +547,6 @@ void vgic_vcpu_inject_irq(struct vcpu *v, unsigned int virq)
 
     if ( !list_empty(&n->inflight) )
     {
-        gic_raise_inflight_irq(v, n);
         goto out;
     }
 
