@@ -388,12 +388,40 @@ static inline void gic_set_lr(int lr, struct pending_irq *p,
     p->lr = lr;
 }
 
+void gic_add_to_lr_pending(struct vcpu *v, struct pending_irq *n)
+{
+    struct pending_irq *iter;
+
+    ASSERT(spin_is_locked(&v->arch.vgic.lock));
+
+    if ( !list_empty(&n->lr_queue) )
+        return;
+
+    list_for_each_entry ( iter, &v->arch.vgic.lr_pending, lr_queue )
+    {
+        if ( iter->priority > n->priority )
+        {
+            list_add_tail(&n->lr_queue, &iter->lr_queue);
+            return;
+        }
+    }
+    list_add_tail(&n->lr_queue, &v->arch.vgic.lr_pending);
+}
+
+void gic_remove_from_lr_pending(struct vcpu *v, struct pending_irq *p)
+{
+    ASSERT(spin_is_locked(&v->arch.vgic.lock));
+
+    list_del_init(&p->lr_queue);
+}
+
 void gic_remove_irq_from_queues(struct vcpu *v, struct pending_irq *p)
 {
     ASSERT(spin_is_locked(&v->arch.vgic.lock));
 
     clear_bit(GIC_IRQ_GUEST_QUEUED, &p->status);
     list_del_init(&p->inflight);
+    gic_remove_from_lr_pending(v, p);
 }
 
 /*
@@ -493,9 +521,10 @@ static void gic_update_one_lr(int i)
         clear_bit(GIC_IRQ_GUEST_VISIBLE, &p->status);
         clear_bit(GIC_IRQ_GUEST_ACTIVE, &p->status);
         p->lr = GIC_INVALID_LR;
-        if ( !(test_bit(GIC_IRQ_GUEST_ENABLED, &p->status) &&
+        if ( test_bit(GIC_IRQ_GUEST_ENABLED, &p->status) &&
              test_bit(GIC_IRQ_GUEST_QUEUED, &p->status) &&
-             !test_bit(GIC_IRQ_GUEST_MIGRATING, &p->status)) )
+             !test_bit(GIC_IRQ_GUEST_MIGRATING, &p->status) )
+            gic_add_to_lr_pending(v, p);
         else {
             list_del_init(&p->inflight);
             /*
@@ -561,10 +590,12 @@ found:
             p_r->lr = GIC_INVALID_LR;
             set_bit(GIC_IRQ_GUEST_QUEUED, &p_r->status);
             clear_bit(GIC_IRQ_GUEST_VISIBLE, &p_r->status);
+            gic_add_to_lr_pending(v, p_r);
             inflight_r = &p_r->inflight;
         }
 
         gic_set_lr(lr, p, GICH_LR_PENDING);
+        list_del_init(&p->lr_queue);
         set_bit(lr, &this_cpu(lr_mask));
 
         /* We can only evict nr_lrs entries */
@@ -574,6 +605,19 @@ found:
     }
 out:
     spin_unlock(&v->arch.vgic.lock);
+}
+
+void gic_clear_pending_irqs(struct vcpu *v)
+{
+    struct pending_irq *p, *t;
+
+    ASSERT(spin_is_locked(&v->arch.vgic.lock));
+
+    v->arch.lr_mask = 0;
+    v->arch.lr_stored = 1;
+
+    list_for_each_entry_safe ( p, t, &v->arch.vgic.lr_pending, lr_queue )
+        gic_remove_from_lr_pending(v, p);
 }
 
 int gic_events_need_delivery(void)
@@ -729,6 +773,11 @@ void gic_dump_info(struct vcpu *v)
     list_for_each_entry ( p, &v->arch.vgic.inflight_irqs, inflight )
     {
         printk("Inflight irq=%u lr=%u\n", p->irq, p->lr);
+    }
+
+    list_for_each_entry( p, &v->arch.vgic.lr_pending, lr_queue )
+    {
+        printk("Pending irq=%d\n", p->irq);
     }
 }
 

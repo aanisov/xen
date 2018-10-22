@@ -240,6 +240,8 @@ extern void gic_clear_pending_irqs(struct vcpu *v);
 extern int gic_events_need_delivery(void);
 
 extern void init_maintenance_interrupt(void);
+extern void gic_add_to_lr_pending(struct vcpu *v, struct pending_irq *n);
+extern void gic_remove_from_lr_pending(struct vcpu *v, struct pending_irq *p);
 extern void gic_remove_irq_from_queues(struct vcpu *v, struct pending_irq *p);
 
 /* Accept an interrupt from the GIC and dispatch its handler */
