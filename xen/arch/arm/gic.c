@@ -342,6 +342,12 @@ void gic_disable_cpu(void)
     gic_hw_ops->disable_interface();
 }
 
+void gic_store_lrs(void)
+{
+    if(gic_hw_ops->store_lrs)
+        gic_hw_ops->store_lrs();
+}
+
 static void do_sgi(struct cpu_user_regs *regs, enum gic_sgi sgi)
 {
     /* Lower the priority */

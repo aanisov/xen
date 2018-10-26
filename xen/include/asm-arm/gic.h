@@ -306,6 +306,7 @@ extern unsigned int gic_number_lines(void);
 /* IRQ translation function for the device tree */
 int gic_irq_xlate(const u32 *intspec, unsigned int intsize,
                   unsigned int *out_hwirq, unsigned int *out_type);
+void gic_store_lrs(void);
 void vgic_sync_from_lrs(struct vcpu *v);
 
 struct gic_info {
@@ -326,6 +327,8 @@ struct gic_hw_operations {
     const struct gic_info *info;
     /* Initialize the GIC and the boot CPU */
     int (*init)(void);
+    /* Save GIC registers */
+    void (*store_lrs)(void);
     /* Save GIC registers */
     void (*save_state)(struct vcpu *);
     /* Restore GIC registers */

@@ -2064,6 +2064,7 @@ static void enter_hypervisor_head(struct cpu_user_regs *regs)
         vcpu_update_evtchn_irq(v);
 #endif
 
+        gic_store_lrs();
         vgic_sync_from_lrs(v);
     }
 }

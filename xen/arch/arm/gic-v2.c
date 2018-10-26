@@ -174,6 +174,14 @@ static unsigned int gicv2_cpu_mask(const cpumask_t *cpumask)
     return mask;
 }
 
+static void gicv2_store_lrs(void)
+{
+    int i;
+
+    for ( i = 0; i < gicv2_info.nr_lrs; i++ )
+        current->arch.gic.v2.lr[i] = readl_gich(GICH_LR + i * 4);
+}
+
 static void gicv2_save_state(struct vcpu *v)
 {
     int i;
@@ -502,11 +510,13 @@ static void gicv2_update_lr(int lr, unsigned int virq, uint8_t priority,
                                    << GICH_V2_LR_PHYSICAL_SHIFT);
 
     writel_gich(lr_reg, GICH_LR + lr * 4);
+    current->arch.gic.v2.lr[lr] = lr_reg;
 }
 
 static void gicv2_clear_lr(int lr)
 {
     writel_gich(0, GICH_LR + lr * 4);
+    current->arch.gic.v2.lr[lr] = 0;
 }
 
 static void gicv2_read_lr(int lr, struct gic_lr *lr_reg)
@@ -514,6 +524,9 @@ static void gicv2_read_lr(int lr, struct gic_lr *lr_reg)
     uint32_t lrv;
 
     lrv          = readl_gich(GICH_LR + lr * 4);
+    if ( lrv != current->arch.gic.v2.lr[lr])
+        printk("Stored LR is stale: stored 0x%"PRIX32" read 0x%"PRIX32"\n",
+               current->arch.gic.v2.lr[lr], lrv);
     lr_reg->virq = (lrv >> GICH_V2_LR_VIRTUAL_SHIFT) & GICH_V2_LR_VIRTUAL_MASK;
     lr_reg->priority = (lrv >> GICH_V2_LR_PRIORITY_SHIFT) & GICH_V2_LR_PRIORITY_MASK;
     lr_reg->pending = lrv & GICH_V2_LR_PENDING;
@@ -569,6 +582,7 @@ static void gicv2_write_lr(int lr, const struct gic_lr *lr_reg)
     }
 
     writel_gich(lrv, GICH_LR + lr * 4);
+    current->arch.gic.v2.lr[lr] = lrv;
 }
 
 static void gicv2_hcr_status(uint32_t flag, bool status)
@@ -1323,6 +1337,7 @@ const static struct gic_hw_operations gicv2_ops = {
     .info                = &gicv2_info,
     .init                = gicv2_init,
     .secondary_init      = gicv2_secondary_cpu_init,
+    .store_lrs           = gicv2_store_lrs,
     .save_state          = gicv2_save_state,
     .restore_state       = gicv2_restore_state,
     .dump_state          = gicv2_dump_state,
