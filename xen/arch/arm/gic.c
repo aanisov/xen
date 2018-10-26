@@ -529,19 +529,22 @@ static void gic_update_one_lr(int i)
     }
     else
     {
-        gic_hw_ops->clear_lr(i);
-        clear_bit(i, &this_cpu(lr_mask));
-
-        if ( p->desc != NULL )
-            clear_bit(_IRQ_INPROGRESS, &p->desc->status);
-        clear_bit(GIC_IRQ_GUEST_VISIBLE, &p->status);
-        clear_bit(GIC_IRQ_GUEST_ACTIVE, &p->status);
-        p->lr = GIC_INVALID_LR;
         if ( test_bit(GIC_IRQ_GUEST_ENABLED, &p->status) &&
              test_bit(GIC_IRQ_GUEST_QUEUED, &p->status) &&
              !test_bit(GIC_IRQ_GUEST_MIGRATING, &p->status) )
-            gic_add_to_lr_pending(v, p);
+        {
+            gic_set_lr(p->lr, p, GICH_LR_PENDING);
+            clear_bit(GIC_IRQ_GUEST_QUEUED, &p->status);
+            clear_bit(GIC_IRQ_GUEST_ACTIVE, &p->status);
+        }
         else {
+            clear_bit(i, &this_cpu(lr_mask));
+            
+            if ( p->desc != NULL )
+                clear_bit(_IRQ_INPROGRESS, &p->desc->status);
+            clear_bit(GIC_IRQ_GUEST_VISIBLE, &p->status);
+            clear_bit(GIC_IRQ_GUEST_ACTIVE, &p->status);
+            p->lr = GIC_INVALID_LR;
             list_del_init(&p->inflight);
             /*
              * Remove from inflight, then change physical affinity. It
@@ -550,11 +553,10 @@ static void gic_update_one_lr(int i)
              * accesses to inflight.
              */
             smp_wmb();
-            if ( test_bit(GIC_IRQ_GUEST_MIGRATING, &p->status) )
+            if ( test_and_clear_bit(GIC_IRQ_GUEST_MIGRATING, &p->status) )
             {
                 struct vcpu *v_target = vgic_get_target_vcpu(v, irq);
                 irq_set_affinity(p->desc, cpumask_of(v_target->processor));
-                clear_bit(GIC_IRQ_GUEST_MIGRATING, &p->status);
             }
         }
     }
@@ -707,6 +709,8 @@ static void do_sgi(struct cpu_user_regs *regs, enum gic_sgi sgi)
 
     /* Lower the priority */
     gic_hw_ops->eoi_irq(desc);
+
+    smp_rmb();
 
     switch (sgi)
     {
