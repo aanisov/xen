@@ -2,6 +2,8 @@
 /*#ifndef __XEN_PERFC_DEFN_H__*/
 /*#define __XEN_PERFC_DEFN_H__*/
 
+PERFCOUNTER(hyp_enter, "hypervisor entry")
+
 PERFCOUNTER(invalid_hypercalls, "invalid hypercalls")
 
 PERFCOUNTER(trap_wfi,      "trap: wfi")
