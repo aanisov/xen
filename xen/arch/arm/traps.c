@@ -2004,6 +2004,8 @@ inject_abt:
 
 static inline bool needs_ssbd_flip(struct vcpu *v)
 {
+    ASSERT(!local_irq_is_enabled());
+
     if ( !check_workaround_ssbd() )
         return false;
 
@@ -2048,6 +2050,7 @@ void do_trap_guest_sync(struct cpu_user_regs *regs)
     const union hsr hsr = { .bits = regs->hsr };
 
     enter_hypervisor_head();
+    local_irq_enable();
 
     switch ( hsr.ec )
     {
@@ -2182,6 +2185,8 @@ void do_trap_hyp_sync(struct cpu_user_regs *regs)
 {
     const union hsr hsr = { .bits = regs->hsr };
 
+    local_irq_enable();
+
     switch ( hsr.ec )
     {
 #ifdef CONFIG_ARM_64
@@ -2218,12 +2223,15 @@ void do_trap_hyp_sync(struct cpu_user_regs *regs)
 
 void do_trap_hyp_serror(struct cpu_user_regs *regs)
 {
+    local_irq_enable();
+
     __do_trap_serror(regs, VABORT_GEN_BY_GUEST(regs));
 }
 
 void do_trap_guest_serror(struct cpu_user_regs *regs)
 {
     enter_hypervisor_head();
+    local_irq_enable();
 
     __do_trap_serror(regs, true);
 }
