@@ -446,10 +446,6 @@ void gic_raise_inflight_irq(struct vcpu *v, struct pending_irq *n)
 #endif
     ASSERT(spin_is_locked(&v->arch.vgic.lock));
 
-    /* Don't try to update the LR if the interrupt is disabled */
-    if ( !test_bit(GIC_IRQ_GUEST_ENABLED, &n->status) )
-        return;
-
     if ( list_empty(&n->lr_queue) )
     {
         if ( v == current )
@@ -732,11 +728,9 @@ int gic_events_need_delivery(void)
             goto out;
         if ( GIC_PRI_TO_GUEST(p->priority) >= active_priority )
             goto out;
-        if ( test_bit(GIC_IRQ_GUEST_ENABLED, &p->status) )
-        {
-            rc = 1;
-            goto out;
-        }
+
+        rc = 1;
+        goto out;
     }
 
 out:
