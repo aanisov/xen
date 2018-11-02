@@ -628,6 +628,7 @@ void gic_clear_lrs(struct vcpu *v)
         return;
 
     gic_hw_ops->fetch_lrs(v, &this_cpu(lr_mask));
+    v->arch.lr_update_mask = 0;
 
     spin_lock_irqsave(&v->arch.vgic.lock, flags);
 

@@ -543,8 +543,6 @@ int vcpu_initialise(struct vcpu *v)
     v->arch.saved_context.sp = (register_t)v->arch.cpu_info;
     v->arch.saved_context.pc = (register_t)continue_new_vcpu;
 
-    v->arch.gic.v2.lr = xzalloc_array(uint32_t, 4);
-
     /* Idle VCPUs don't need the rest of this setup */
     if ( is_idle_vcpu(v) )
         return rc;
