@@ -558,6 +558,10 @@ int arch_vcpu_create(struct vcpu *v)
     v->arch.saved_context.sp = (register_t)v->arch.cpu_info;
     v->arch.saved_context.pc = (register_t)continue_new_vcpu;
 
+    v->arch.gic.v2.lr = xzalloc_bytes(sizeof(uint32_t) * gic_number_lines());
+    if ( v->arch.gic.v2.lr == NULL )
+        return -ENOMEM;
+
     /* Idle VCPUs don't need the rest of this setup */
     if ( is_idle_vcpu(v) )
         return rc;

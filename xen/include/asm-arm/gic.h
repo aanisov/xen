@@ -186,7 +186,7 @@ struct gic_v2 {
     uint32_t hcr;
     uint32_t vmcr;
     uint32_t apr;
-    uint32_t lr[64];
+    uint32_t *lr;
     uint64_t lr_update_mask;
 };
 

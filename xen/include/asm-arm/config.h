@@ -28,7 +28,7 @@
 
 #define CONFIG_ARM 1
 
-#define CONFIG_ARM_L1_CACHE_SHIFT 7 /* XXX */
+#define CONFIG_ARM_L1_CACHE_SHIFT 6 /* XXX */
 
 #define CONFIG_SMP 1
 
