@@ -496,7 +496,8 @@ void gicv2_push_lrs(struct vcpu *v, uint64_t *mask)
     int i;
 
     for ( i = 0; i < gicv2_info.nr_lrs; i++ )
-        writel_gich(v->arch.gic.v2.lr[i], GICH_LR + i * 4);
+        if ( test_bit(i, mask) )
+            writel_gich(v->arch.gic.v2.lr[i], GICH_LR + i * 4);
 }
 
 static void gicv2_hcr_status(uint32_t flag, bool status)
