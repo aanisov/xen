@@ -101,6 +101,7 @@ void gic_restore_state(struct vcpu *v)
     ASSERT(!local_irq_is_enabled());
     ASSERT(!is_idle_vcpu(v));
 
+    v->arch.lr_update_mask = (1 << gic_hw_ops->info->nr_lrs) - 1;
     this_cpu(lr_mask) = v->arch.lr_mask;
     gic_hw_ops->restore_state(v);
 
@@ -389,6 +390,7 @@ void gic_disable_cpu(void)
 static inline void gic_set_lr(int lr, struct pending_irq *p,
                               unsigned int state)
 {
+    struct vcpu *v = current;
     ASSERT(!local_irq_is_enabled());
 
 #ifdef CONFIG_HAS_GICV3
@@ -396,6 +398,7 @@ static inline void gic_set_lr(int lr, struct pending_irq *p,
 #endif
 
     gic_hw_ops->update_lr(lr, p, state);
+    v->arch.lr_update_mask |= 1<<lr;
 
     set_bit(GIC_IRQ_GUEST_VISIBLE, &p->status);
     clear_bit(GIC_IRQ_GUEST_QUEUED, &p->status);
@@ -564,6 +567,7 @@ static void gic_update_one_lr(struct vcpu *v, int i)
             {
                  lr_val.state |= GICH_LR_PENDING;
                  gic_hw_ops->write_lr(i, &lr_val);
+                 v->arch.lr_update_mask |= 1<<i;
             }
             else
                 gdprintk(XENLOG_WARNING, "unable to inject hw irq=%d into d%dv%d: already active in LR%d\n",
@@ -626,6 +630,7 @@ void gic_clear_lrs(void)
     gic_hw_ops->update_hcr_status(GICH_HCR_UIE, false);
 
     gic_hw_ops->fetch_lrs(v, &this_cpu(lr_mask));
+    v->arch.lr_update_mask = 0;
 
     spin_lock_irqsave(&v->arch.vgic.lock, flags);
 
@@ -745,7 +750,7 @@ void gic_inject(void)
 
     gic_restore_pending_irqs(current);
 
-    gic_hw_ops->push_lrs(current, &this_cpu(lr_mask));
+    gic_hw_ops->push_lrs(current, &current->arch.lr_update_mask);
 
     if ( !list_empty(&current->arch.vgic.lr_pending) && lr_all_full() )
         gic_hw_ops->update_hcr_status(GICH_HCR_UIE, true);
