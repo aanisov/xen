@@ -629,7 +629,7 @@ void gic_clear_lrs(void)
 
     gic_hw_ops->update_hcr_status(GICH_HCR_UIE, false);
 
-    gic_hw_ops->fetch_lrs(v, &this_cpu(lr_mask));
+    gic_hw_ops->fetch_lrs(this_cpu(lr_mask));
     v->arch.lr_update_mask = 0;
 
     spin_lock_irqsave(&v->arch.vgic.lock, flags);
@@ -750,7 +750,7 @@ void gic_inject(void)
 
     gic_restore_pending_irqs(current);
 
-    gic_hw_ops->push_lrs(current, &current->arch.lr_update_mask);
+    gic_hw_ops->push_lrs(current->arch.lr_update_mask);
 
     if ( !list_empty(&current->arch.vgic.lr_pending) && lr_all_full() )
         gic_hw_ops->update_hcr_status(GICH_HCR_UIE, true);

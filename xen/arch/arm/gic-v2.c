@@ -474,23 +474,25 @@ static void gicv2_write_lr(int lr, const struct gic_lr *lr_reg)
     current->arch.gic.v2.lr[lr] = lrv;
 }
 
-void gicv2_fetch_lrs(struct vcpu *v, uint64_t *mask)
+void gicv2_fetch_lrs(uint64_t mask)
 {
     int i;
+    struct vcpu *v = current;
 
     for ( i = 0; i < gicv2_info.nr_lrs; i++ )
-        if ( test_bit(i, mask) )
+        if ( mask & 1<<i )
             v->arch.gic.v2.lr[i] = readl_gich(GICH_LR + i * 4);
         else
             v->arch.gic.v2.lr[i] = 0;
 }
 
-void gicv2_push_lrs(struct vcpu *v, uint64_t *mask)
+void gicv2_push_lrs(uint64_t mask)
 {
     int i;
+    struct vcpu *v = current;
 
     for ( i = 0; i < gicv2_info.nr_lrs; i++ )
-        if ( test_bit(i, mask) )
+        if ( mask & 1<<i )
             writel_gich(v->arch.gic.v2.lr[i], GICH_LR + i * 4);
 }
 

@@ -370,8 +370,8 @@ struct gic_hw_operations {
     int (*iomem_deny_access)(const struct domain *d);
     /* Handle LPIs, which require special handling */
     void (*do_LPI)(unsigned int lpi);
-    void (*fetch_lrs) (struct vcpu *v, uint64_t *mask);
-    void (*push_lrs) (struct vcpu *v, uint64_t *mask);
+    void (*fetch_lrs) (uint64_t mask);
+    void (*push_lrs) (uint64_t mask);
 };
 
 void register_gic_ops(const struct gic_hw_operations *ops);
