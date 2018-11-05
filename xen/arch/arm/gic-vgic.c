@@ -302,11 +302,12 @@ static void gic_restore_pending_irqs(struct vcpu *v)
     int lr = 0;
     struct pending_irq *p, *t, *p_r;
     struct list_head *inflight_r;
-    unsigned long flags;
     unsigned int nr_lrs = gic_get_nr_lrs();
     int lrs = nr_lrs;
 
-    spin_lock_irqsave(&v->arch.vgic.lock, flags);
+    ASSERT(!local_irq_is_enabled());
+
+    spin_lock(&v->arch.vgic.lock);
 
     if ( list_empty(&v->arch.vgic.lr_pending) )
         goto out;
@@ -350,7 +351,7 @@ found:
     }
 
 out:
-    spin_unlock_irqrestore(&v->arch.vgic.lock, flags);
+    spin_unlock(&v->arch.vgic.lock);
 }
 
 void gic_clear_pending_irqs(struct vcpu *v)
