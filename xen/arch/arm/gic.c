@@ -618,21 +618,17 @@ static void gic_update_one_lr(struct vcpu *v, int i)
 void gic_clear_lrs(struct vcpu *v)
 {
     int i = 0;
-    unsigned long flags;
     unsigned int nr_lrs = gic_hw_ops->info->nr_lrs;
 
-    /* The idle domain has no LRs to be cleared. Since gic_restore_state
-     * doesn't write any LR registers for the idle domain they could be
-     * non-zero. */
-    if ( is_idle_vcpu(v) )
-        return;
+    ASSERT(!is_idle_vcpu(v));
+    ASSERT(!local_irq_is_enabled());
 
     gic_hw_ops->update_hcr_status(GICH_HCR_UIE, false);
 
     gic_hw_ops->fetch_lrs(v, this_cpu(lr_mask));
     v->arch.lr_update_mask = 0;
 
-    spin_lock_irqsave(&v->arch.vgic.lock, flags);
+    spin_lock(&v->arch.vgic.lock);
 
     while ((i = find_next_bit((const unsigned long *) &this_cpu(lr_mask),
                               nr_lrs, i)) < nr_lrs ) {
@@ -640,7 +636,7 @@ void gic_clear_lrs(struct vcpu *v)
         i++;
     }
 
-    spin_unlock_irqrestore(&v->arch.vgic.lock, flags);
+    spin_unlock(&v->arch.vgic.lock);
 }
 
 static void gic_restore_pending_irqs(struct vcpu *v)
@@ -648,11 +644,12 @@ static void gic_restore_pending_irqs(struct vcpu *v)
     int lr = 0;
     struct pending_irq *p, *t, *p_r;
     struct list_head *inflight_r;
-    unsigned long flags;
     unsigned int nr_lrs = gic_hw_ops->info->nr_lrs;
     int lrs = nr_lrs;
 
-    spin_lock_irqsave(&v->arch.vgic.lock, flags);
+    ASSERT(!local_irq_is_enabled());
+
+    spin_lock(&v->arch.vgic.lock);
 
     if ( list_empty(&v->arch.vgic.lr_pending) )
         goto out;
@@ -696,7 +693,7 @@ found:
     }
 
 out:
-    spin_unlock_irqrestore(&v->arch.vgic.lock, flags);
+    spin_unlock(&v->arch.vgic.lock);
 }
 
 void gic_clear_pending_irqs(struct vcpu *v)
