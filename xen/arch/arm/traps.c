@@ -2038,6 +2038,8 @@ static void enter_hypervisor_head(struct cpu_user_regs *regs)
     {
         struct vcpu *v = current;
 
+        ASSERT(!local_irq_is_enabled());
+
         /* If the guest has disabled the workaround, bring it back on. */
         if ( needs_ssbd_flip(v) )
             arm_smccc_1_1_smc(ARM_SMCCC_ARCH_WORKAROUND_2_FID, 1, NULL);
@@ -2072,6 +2074,7 @@ void do_trap_guest_sync(struct cpu_user_regs *regs)
     const union hsr hsr = { .bits = regs->hsr };
 
     enter_hypervisor_head(regs);
+    local_irq_enable();
 
     switch ( hsr.ec )
     {
@@ -2207,6 +2210,7 @@ void do_trap_hyp_sync(struct cpu_user_regs *regs)
     const union hsr hsr = { .bits = regs->hsr };
 
     enter_hypervisor_head(regs);
+    local_irq_enable();
 
     switch ( hsr.ec )
     {
@@ -2245,6 +2249,7 @@ void do_trap_hyp_sync(struct cpu_user_regs *regs)
 void do_trap_hyp_serror(struct cpu_user_regs *regs)
 {
     enter_hypervisor_head(regs);
+    local_irq_enable();
 
     __do_trap_serror(regs, VABORT_GEN_BY_GUEST(regs));
 }
@@ -2252,6 +2257,7 @@ void do_trap_hyp_serror(struct cpu_user_regs *regs)
 void do_trap_guest_serror(struct cpu_user_regs *regs)
 {
     enter_hypervisor_head(regs);
+    local_irq_enable();
 
     __do_trap_serror(regs, true);
 }
