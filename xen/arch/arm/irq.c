@@ -185,6 +185,7 @@ int request_irq(unsigned int irq, unsigned int irqflags,
 }
 
 /* Dispatch an interrupt */
+//extern const struct gic_hw_operations *gic_hw_ops;
 void do_IRQ(struct cpu_user_regs *regs, unsigned int irq, int is_fiq)
 {
     struct irq_desc *desc = irq_to_desc(irq);
@@ -203,6 +204,12 @@ void do_IRQ(struct cpu_user_regs *regs, unsigned int irq, int is_fiq)
     irq_enter();
 
     spin_lock(&desc->lock);
+
+    if (irq == 30) {
+        set_bit(_IRQ_GUEST, &desc->status);
+        desc->handler = gic_hw_ops->gic_guest_irq_type;
+    }
+
     desc->handler->ack(desc);
 
     if ( test_bit(_IRQ_GUEST, &desc->status) )
@@ -218,7 +225,23 @@ void do_IRQ(struct cpu_user_regs *regs, unsigned int irq, int is_fiq)
          * The irq cannot be a PPI, we only support delivery of SPIs to
          * guests.
 	 */
-        vgic_inject_irq(info->d, NULL, info->virq, true);
+        if (irq != 30)
+            vgic_inject_irq(info->d, NULL, info->virq, true);
+        else {
+            struct domain *d;
+            
+            for_each_domain ( d )
+            {
+                struct pending_irq *p;
+                
+                if (d->domain_id == 0 || is_idle_domain(d))
+                    continue;
+                p = irq_to_pending(d->vcpu[0], 30);
+                p->desc = desc;
+                vgic_inject_irq(d, d->vcpu[0], 30, true);
+                break;
+            }
+        }
         goto out_no_end;
     }
 
