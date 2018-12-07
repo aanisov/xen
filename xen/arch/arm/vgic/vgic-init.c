@@ -88,6 +88,11 @@ static void vgic_vcpu_early_init(struct vcpu *vcpu)
         {
             /* PPIs */
             irq->config = VGIC_CONFIG_LEVEL;
+            if ( i == timer_get_irq(TIMER_PHYS_NONSECURE_PPI) )
+            {
+                irq->hw = 1;
+                irq->hwintid = i;
+            }
         }
     }
 }
