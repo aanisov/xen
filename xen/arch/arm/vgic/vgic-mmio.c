@@ -93,7 +93,8 @@ void vgic_mmio_write_senable(struct vcpu *vcpu,
              * The irq cannot be a PPI, we only support delivery
              * of SPIs to guests.
              */
-            ASSERT(irq->hwintid >= VGIC_NR_PRIVATE_IRQS);
+            ASSERT(irq->hwintid >= VGIC_NR_PRIVATE_IRQS ||
+                   irq->hwintid == timer_get_irq(TIMER_PHYS_NONSECURE_PPI));
 
             desc = irq_to_desc(irq->hwintid);
         }

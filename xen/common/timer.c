@@ -275,7 +275,7 @@ static inline void timer_unlock(struct timer *timer)
 
 static bool_t active_timer(struct timer *timer)
 {
-    ASSERT(timer->status >= TIMER_STATUS_inactive);
+/*    ASSERT(timer->status >= TIMER_STATUS_inactive);*/
     ASSERT(timer->status <= TIMER_STATUS_in_list);
     return (timer->status >= TIMER_STATUS_in_heap);
 }

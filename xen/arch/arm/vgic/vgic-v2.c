@@ -151,7 +151,8 @@ void vgic_v2_fold_lr_state(struct vcpu *vcpu)
          */
         if ( vgic_irq_is_mapped_level(irq) && lr_val.pending )
         {
-            ASSERT(irq->hwintid >= VGIC_NR_PRIVATE_IRQS);
+            ASSERT(irq->hwintid >= VGIC_NR_PRIVATE_IRQS ||
+                   irq->hwintid == timer_get_irq(TIMER_PHYS_NONSECURE_PPI));
 
             irq->line_level = gic_read_pending_state(desc);
 
