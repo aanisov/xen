@@ -792,6 +792,7 @@ void arch_domain_destroy(struct domain *d)
     /* IOMMU page table is shared with P2M, always call
      * iommu_domain_destroy() before p2m_teardown().
      */
+    WRITE_SYSREG32(0, CNTP_CTL_EL0);
     iommu_domain_destroy(d);
     p2m_teardown(d);
     domain_vgic_free(d);
