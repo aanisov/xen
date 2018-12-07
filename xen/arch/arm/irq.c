@@ -231,7 +231,23 @@ void do_IRQ(struct cpu_user_regs *regs, unsigned int irq, int is_fiq)
          * The irq cannot be a PPI, we only support delivery of SPIs to
          * guests.
          */
-        vgic_inject_irq(info->d, NULL, info->virq, true);
+
+        if ( irq != timer_get_irq(TIMER_PHYS_NONSECURE_PPI) )
+            vgic_inject_irq(info->d, NULL, info->virq, true);
+        else {
+            struct domain *d;
+
+            for_each_domain ( d )
+            {
+                if ( d->domain_id != 0 && !is_idle_domain(d) )
+                {
+                    vgic_inject_irq(d, d->vcpu[0],
+                                    timer_get_irq(TIMER_PHYS_NONSECURE_PPI),
+                                    true);
+                    break;
+                }
+            }
+        }
         goto out_no_end;
     }
 
@@ -378,6 +394,11 @@ int setup_irq(unsigned int irq, unsigned int irqflags, struct irqaction *new)
     if ( disabled )
     {
         gic_route_irq_to_xen(desc, GIC_PRI_IRQ);
+        if ( irq == timer_get_irq(TIMER_PHYS_NONSECURE_PPI) )
+        {
+            set_bit(_IRQ_GUEST, &desc->status);
+            desc->handler = gic_hw_ops->gic_guest_irq_type;
+        }
         /* It's fine to use smp_processor_id() because:
          * For PPI: irq_desc is banked
          * For SPI: we don't care for now which CPU will receive the
