@@ -219,6 +219,9 @@ int vcpu_vgic_init(struct vcpu *v)
     for (i = 0; i < 32; i++)
         vgic_init_pending_irq(&v->arch.vgic.pending_irqs[i], i);
 
+    v->arch.vgic.pending_irqs[timer_get_irq(TIMER_PHYS_NONSECURE_PPI)].desc =
+        irq_to_desc(timer_get_irq(TIMER_PHYS_NONSECURE_PPI));
+
     INIT_LIST_HEAD(&v->arch.vgic.inflight_irqs);
     INIT_LIST_HEAD(&v->arch.vgic.lr_pending);
     spin_lock_init(&v->arch.vgic.lock);
