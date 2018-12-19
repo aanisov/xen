@@ -174,6 +174,28 @@ static unsigned int gicv2_cpu_mask(const cpumask_t *cpumask)
     return mask;
 }
 
+static void _gicv2_hcr_status(struct vcpu *v, uint32_t flag, bool status)
+{
+    uint32_t hcr, ohcr;
+
+    ohcr = hcr = v->arch.gic.v2.hcr;
+
+    if ( status )
+        hcr |= flag;
+    else
+        hcr &= (~flag);
+
+    if ( hcr != ohcr )
+        writel_gich(hcr, GICH_HCR);
+
+     v->arch.gic.v2.hcr = hcr;
+}
+
+static void gicv2_hcr_status(uint32_t flag, bool status)
+{
+    _gicv2_hcr_status(current, flag, status);
+}
+
 static void gicv2_save_state(struct vcpu *v)
 {
     int i;
@@ -188,10 +210,10 @@ static void gicv2_save_state(struct vcpu *v)
     v->arch.gic.v2.apr = readl_gich(GICH_APR);
     v->arch.gic.v2.vmcr = readl_gich(GICH_VMCR);
     /* Disable until next VCPU scheduled */
-    writel_gich(0, GICH_HCR);
+    _gicv2_hcr_status(v, GICH_HCR_EN, false);
 }
 
-static void gicv2_restore_state(const struct vcpu *v)
+static void gicv2_restore_state(struct vcpu *v)
 {
     int i;
 
@@ -200,7 +222,7 @@ static void gicv2_restore_state(const struct vcpu *v)
 
     writel_gich(v->arch.gic.v2.apr, GICH_APR);
     writel_gich(v->arch.gic.v2.vmcr, GICH_VMCR);
-    writel_gich(GICH_HCR_EN, GICH_HCR);
+    _gicv2_hcr_status(v, GICH_HCR_EN, true);
 }
 
 static void gicv2_dump_state(const struct vcpu *v)
@@ -575,21 +597,6 @@ static void gicv2_write_lr(int lr, const struct gic_lr *lr_reg)
     }
 
     writel_gich(lrv, GICH_LR + lr * 4);
-}
-
-static void gicv2_hcr_status(uint32_t flag, bool status)
-{
-    uint32_t hcr, ohcr;
-
-    ohcr = hcr = readl_gich(GICH_HCR);
-
-    if ( status )
-        hcr |= flag;
-    else
-        hcr &= (~flag);
-
-    if ( hcr != ohcr )
-        writel_gich(hcr, GICH_HCR);
 }
 
 static unsigned int gicv2_read_vmcr_priority(void)

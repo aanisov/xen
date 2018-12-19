@@ -377,7 +377,7 @@ static void gicv3_save_state(struct vcpu *v)
     v->arch.gic.v3.sre_el1 = READ_SYSREG32(ICC_SRE_EL1);
 }
 
-static void gicv3_restore_state(const struct vcpu *v)
+static void gicv3_restore_state(struct vcpu *v)
 {
     uint32_t val;
 
