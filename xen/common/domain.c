@@ -1192,7 +1192,7 @@ int domain_soft_reset(struct domain *d)
 
     for_each_vcpu ( d, v )
     {
-        set_xen_guest_handle(runstate_guest(v), NULL);
+        set_xen_guest_handle(runstate_guest(v).handle, NULL);
         unmap_vcpu_info(v);
     }
 
@@ -1520,18 +1520,25 @@ long do_vcpu_op(int cmd, unsigned int vcpuid, XEN_GUEST_HANDLE_PARAM(void) arg)
             break;
 
         rc = 0;
-        runstate_guest(v) = area.addr.h;
+        runstate_guest(v).handle = area.addr.h;
+        runstate_guest(v).type = RUNSTATE_VADDR;
 
         if ( v == current )
         {
-            __copy_to_guest(runstate_guest(v), &v->runstate, 1);
+            __copy_to_guest(runstate_guest(v).handle, &v->runstate, 1);
         }
         else
         {
             vcpu_runstate_get(v, &runstate);
-            __copy_to_guest(runstate_guest(v), &runstate, 1);
+            __copy_to_guest(runstate_guest(v).handle, &runstate, 1);
         }
 
+        break;
+    }
+
+    case VCPUOP_register_runstate_phys_memory_area:
+    {
+        rc = -ENOSYS;
         break;
     }
 
