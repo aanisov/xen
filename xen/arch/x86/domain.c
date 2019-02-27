@@ -1552,51 +1552,98 @@ void paravirt_ctxt_switch_to(struct vcpu *v)
         wrmsr_tsc_aux(v->arch.msrs->tsc_aux);
 }
 
-/* Update per-VCPU guest runstate shared memory area (if registered). */
-bool update_runstate_area(struct vcpu *v)
+static void update_mapped_runstate_area_native(struct vcpu *v)
 {
-    bool rc;
-    struct guest_memory_policy policy = { .nested_guest_mode = false };
-    void __user *guest_handle = NULL;
+    if ( VM_ASSIST(v->domain, runstate_update_flag) )
+    {
+        v->runstate.state_entry_time |= XEN_RUNSTATE_UPDATE;
+        v->mapped_runstate.native->state_entry_time |= XEN_RUNSTATE_UPDATE;
+        smp_wmb();
+    }
 
-    if ( guest_handle_is_null(runstate_guest(v)) )
-        return true;
-
-    update_guest_memory_policy(v, &policy);
+    memcpy(v->mapped_runstate.native, &v->runstate, sizeof(v->runstate));
 
     if ( VM_ASSIST(v->domain, runstate_update_flag) )
     {
-        guest_handle = has_32bit_shinfo(v->domain)
-            ? &v->runstate_guest.compat.p->state_entry_time + 1
-            : &v->runstate_guest.native.p->state_entry_time + 1;
-        guest_handle--;
+        v->runstate.state_entry_time &= ~XEN_RUNSTATE_UPDATE;
+        v->mapped_runstate.native->state_entry_time &= ~XEN_RUNSTATE_UPDATE;
+        smp_wmb();
+    }
+}
+
+static void update_mapped_runstate_area_compat(struct vcpu *v)
+{
+    if ( VM_ASSIST(v->domain, runstate_update_flag) )
+    {
         v->runstate.state_entry_time |= XEN_RUNSTATE_UPDATE;
-        __raw_copy_to_guest(guest_handle,
-                            (void *)(&v->runstate.state_entry_time + 1) - 1, 1);
+        v->mapped_runstate.compat->state_entry_time |= XEN_RUNSTATE_UPDATE;
         smp_wmb();
     }
 
-    if ( has_32bit_shinfo(v->domain) )
-    {
-        struct compat_vcpu_runstate_info info;
+    memcpy(v->mapped_runstate.compat, &v->runstate, sizeof(v->runstate));
 
-        XLAT_vcpu_runstate_info(&info, &v->runstate);
-        __copy_to_guest(v->runstate_guest.compat, &info, 1);
-        rc = true;
-    }
-    else
-        rc = __copy_to_guest(runstate_guest(v), &v->runstate, 1) !=
-             sizeof(v->runstate);
-
-    if ( guest_handle )
+    if ( VM_ASSIST(v->domain, runstate_update_flag) )
     {
         v->runstate.state_entry_time &= ~XEN_RUNSTATE_UPDATE;
+        v->mapped_runstate.compat->state_entry_time &= ~XEN_RUNSTATE_UPDATE;
         smp_wmb();
-        __raw_copy_to_guest(guest_handle,
-                            (void *)(&v->runstate.state_entry_time + 1) - 1, 1);
+    }
+}
+
+/* Update per-VCPU guest runstate shared memory area (if registered). */
+bool update_runstate_area(struct vcpu *v)
+{
+    bool rc = true;
+
+    if ( !guest_handle_is_null(runstate_guest(v)) )
+    {
+        struct guest_memory_policy policy = { .nested_guest_mode = false };
+        void __user *guest_handle = NULL;
+
+        update_guest_memory_policy(v, &policy);
+        if ( VM_ASSIST(v->domain, runstate_update_flag) )
+        {
+            guest_handle = has_32bit_shinfo(v->domain)
+                ? &v->runstate_guest.compat.p->state_entry_time + 1
+                : &v->runstate_guest.native.p->state_entry_time + 1;
+            guest_handle--;
+            v->runstate.state_entry_time |= XEN_RUNSTATE_UPDATE;
+            __raw_copy_to_guest(guest_handle,
+                                (void *)(&v->runstate.state_entry_time + 1) - 1, 1);
+            smp_wmb();
+        }
+
+        if ( has_32bit_shinfo(v->domain) )
+        {
+            struct compat_vcpu_runstate_info info;
+
+            XLAT_vcpu_runstate_info(&info, &v->runstate);
+            __copy_to_guest(v->runstate_guest.compat, &info, 1);
+            rc = true;
+        }
+        else
+            rc = __copy_to_guest(runstate_guest(v), &v->runstate, 1) !=
+                 sizeof(v->runstate);
+
+        if ( guest_handle )
+        {
+            v->runstate.state_entry_time &= ~XEN_RUNSTATE_UPDATE;
+            smp_wmb();
+            __raw_copy_to_guest(guest_handle,
+                                (void *)(&v->runstate.state_entry_time + 1) - 1, 1);
+        }
+        update_guest_memory_policy(v, &policy);
     }
 
-    update_guest_memory_policy(v, &policy);
+    spin_lock(v->mapped_runstate_lock);
+    if ( v->mapped_runstate )
+    {
+        if ( has_32bit_shinfo((v)->domain) )
+            update_mapped_runstate_area_compat(v);
+        else
+            update_mapped_runstate_area_native(v);
+    }
+    spin_unlock(v->mapped_runstate_lock);
 
     return rc;
 }

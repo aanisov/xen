@@ -163,15 +163,23 @@ struct vcpu
     void            *sched_priv;    /* scheduler-specific data */
 
     struct vcpu_runstate_info runstate;
+
+    spinlock_t      mapped_runstate_lock;
+
 #ifndef CONFIG_COMPAT
 # define runstate_guest(v) ((v)->runstate_guest)
     XEN_GUEST_HANDLE(vcpu_runstate_info_t) runstate_guest; /* guest address */
+    vcpu_runstate_info_t *mapped_runstate;
 #else
 # define runstate_guest(v) ((v)->runstate_guest.native)
     union {
         XEN_GUEST_HANDLE(vcpu_runstate_info_t) native;
         XEN_GUEST_HANDLE(vcpu_runstate_info_compat_t) compat;
     } runstate_guest; /* guest address */
+    union {
+        vcpu_runstate_info_t* native;
+        vcpu_runstate_info_compat_t* compat;
+    } mapped_runstate; /* guest address */
 #endif
 
     /* last time when vCPU is scheduled out */

@@ -275,32 +275,55 @@ static void ctxt_switch_to(struct vcpu *n)
 }
 
 /* Update per-VCPU guest runstate shared memory area (if registered). */
-static void update_runstate_area(struct vcpu *v)
+void update_runstate_area(struct vcpu *v)
 {
-    void __user *guest_handle = NULL;
-
-    if ( guest_handle_is_null(runstate_guest(v)) )
-        return;
-
-    if ( VM_ASSIST(v->domain, runstate_update_flag) )
+    if ( !guest_handle_is_null(runstate_guest(v)) )
     {
-        guest_handle = &v->runstate_guest.p->state_entry_time + 1;
-        guest_handle--;
-        v->runstate.state_entry_time |= XEN_RUNSTATE_UPDATE;
-        __raw_copy_to_guest(guest_handle,
-                            (void *)(&v->runstate.state_entry_time + 1) - 1, 1);
-        smp_wmb();
+        void __user *guest_handle = NULL;
+        if ( VM_ASSIST(v->domain, runstate_update_flag) )
+        {
+            guest_handle = &v->runstate_guest.p->state_entry_time + 1;
+            guest_handle--;
+            v->runstate.state_entry_time |= XEN_RUNSTATE_UPDATE;
+            __raw_copy_to_guest(guest_handle,
+                                (void *)(&v->runstate.state_entry_time + 1) - 1,
+                                1);
+            smp_wmb();
+        }
+
+        __copy_to_guest(runstate_guest(v), &v->runstate, 1);
+
+        if ( guest_handle )
+        {
+            v->runstate.state_entry_time &= ~XEN_RUNSTATE_UPDATE;
+            smp_wmb();
+            __raw_copy_to_guest(guest_handle,
+                                (void *)(&v->runstate.state_entry_time + 1) - 1,
+                                1);
+        }
     }
 
-    __copy_to_guest(runstate_guest(v), &v->runstate, 1);
-
-    if ( guest_handle )
+    spin_lock(&v->mapped_runstate_lock);
+    if ( v->mapped_runstate )
     {
-        v->runstate.state_entry_time &= ~XEN_RUNSTATE_UPDATE;
-        smp_wmb();
-        __raw_copy_to_guest(guest_handle,
-                            (void *)(&v->runstate.state_entry_time + 1) - 1, 1);
+        if ( VM_ASSIST(v->domain, runstate_update_flag) )
+        {
+            v->mapped_runstate->state_entry_time |= XEN_RUNSTATE_UPDATE;
+            smp_wmb();
+            v->runstate.state_entry_time |= XEN_RUNSTATE_UPDATE;
+        }
+
+        memcpy(v->mapped_runstate, &v->runstate, sizeof(v->runstate));
+
+        if ( VM_ASSIST(v->domain, runstate_update_flag) )
+        {
+            v->mapped_runstate->state_entry_time &= ~XEN_RUNSTATE_UPDATE;
+            smp_wmb();
+            v->runstate.state_entry_time &= ~XEN_RUNSTATE_UPDATE;
+        }
     }
+    spin_unlock(&v->mapped_runstate_lock);
+
 }
 
 static void schedule_tail(struct vcpu *prev)
@@ -998,6 +1021,7 @@ long do_arm_vcpu_op(int cmd, unsigned int vcpuid, XEN_GUEST_HANDLE_PARAM(void) a
     {
         case VCPUOP_register_vcpu_info:
         case VCPUOP_register_runstate_memory_area:
+        case VCPUOP_register_runstate_phys_memory_area:
             return do_vcpu_op(cmd, vcpuid, arg);
         default:
             return -EINVAL;
