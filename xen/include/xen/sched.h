@@ -163,6 +163,13 @@ struct vcpu
     void            *sched_priv;    /* scheduler-specific data */
 
     struct vcpu_runstate_info runstate;
+
+    enum {
+        RUNSTATE_NONE = 0,
+        RUNSTATE_PADDR = 1,
+        RUNSTATE_VADDR = 2,
+    } runstate_guest_type;
+
 #ifndef CONFIG_COMPAT
 # define runstate_guest(v) ((v)->runstate_guest)
     XEN_GUEST_HANDLE(vcpu_runstate_info_t) runstate_guest; /* guest address */

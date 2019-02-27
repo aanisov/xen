@@ -1521,6 +1521,7 @@ long do_vcpu_op(int cmd, unsigned int vcpuid, XEN_GUEST_HANDLE_PARAM(void) arg)
 
         rc = 0;
         runstate_guest(v) = area.addr.h;
+        v->runstate_guest_type = RUNSTATE_VADDR;
 
         if ( v == current )
         {
@@ -1532,6 +1533,12 @@ long do_vcpu_op(int cmd, unsigned int vcpuid, XEN_GUEST_HANDLE_PARAM(void) arg)
             __copy_to_guest(runstate_guest(v), &runstate, 1);
         }
 
+        break;
+    }
+
+    case VCPUOP_register_runstate_phys_memory_area:
+    {
+        rc = -ENOSYS;
         break;
     }
 
