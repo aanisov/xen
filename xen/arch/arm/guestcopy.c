@@ -111,6 +111,12 @@ unsigned long raw_copy_to_guest(void *to, const void *from, unsigned len)
                       GVA_INFO(current), COPY_to_guest | COPY_linear);
 }
 
+unsigned long raw_copy_to_guest_phys(void *to, const void *from, unsigned len)
+{
+    return copy_guest((void *)from, (vaddr_t)to, len,
+                      GPA_INFO(current->domain), COPY_to_guest | COPY_ipa);
+}
+
 unsigned long raw_copy_to_guest_flush_dcache(void *to, const void *from,
                                              unsigned len)
 {

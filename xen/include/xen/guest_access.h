@@ -23,6 +23,9 @@
 #define __copy_to_guest(hnd, ptr, nr)                   \
     __copy_to_guest_offset(hnd, 0, ptr, nr)
 
+#define __copy_to_guest_phys(hnd, ptr, nr)              \
+    __copy_to_guest_phys_offset(hnd, 0, ptr, nr)
+
 #define __copy_from_guest(ptr, hnd, nr)                 \
     __copy_from_guest_offset(ptr, hnd, 0, nr)
 

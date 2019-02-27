@@ -6,6 +6,7 @@
 #include <xen/sched.h>
 
 unsigned long raw_copy_to_guest(void *to, const void *from, unsigned len);
+unsigned long raw_copy_to_guest_phys(void *to, const void *from, unsigned len);
 unsigned long raw_copy_to_guest_flush_dcache(void *to, const void *from,
                                              unsigned len);
 unsigned long raw_copy_from_guest(void *to, const void *from, unsigned len);
@@ -20,7 +21,11 @@ unsigned long copy_to_guest_phys_flush_dcache(struct domain *d,
 int access_guest_memory_by_ipa(struct domain *d, paddr_t ipa, void *buf,
                                uint32_t size, bool is_write);
 
+unsigned long copy_to_guest_phys(struct domain *d, paddr_t gpa, void *buf,
+                                 unsigned int len);
+
 #define __raw_copy_to_guest raw_copy_to_guest
+#define __raw_copy_to_guest_phys raw_copy_to_guest_phys
 #define __raw_copy_from_guest raw_copy_from_guest
 #define __raw_clear_guest raw_clear_guest
 
@@ -129,6 +134,13 @@ int access_guest_memory_by_ipa(struct domain *d, paddr_t ipa, void *buf,
     char (*_d)[sizeof(*_s)] = (void *)(hnd).p;          \
     ((void)((hnd).p == (ptr)));                         \
     __raw_copy_to_guest(_d+(off), _s, sizeof(*_s)*(nr));\
+})
+
+#define __copy_to_guest_phys_offset(hnd, off, ptr, nr) ({\
+    const typeof(*(ptr)) *_s = (ptr);                   \
+    char (*_d)[sizeof(*_s)] = (void *)(hnd).p;          \
+    ((void)((hnd).p == (ptr)));                         \
+    __raw_copy_to_guest_phys(_d+(off), _s, sizeof(*_s)*(nr));\
 })
 
 #define __clear_guest_offset(hnd, off, ptr, nr) ({      \
