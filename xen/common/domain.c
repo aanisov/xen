@@ -1538,7 +1538,30 @@ long do_vcpu_op(int cmd, unsigned int vcpuid, XEN_GUEST_HANDLE_PARAM(void) arg)
 
     case VCPUOP_register_runstate_phys_memory_area:
     {
-        rc = -ENOSYS;
+        struct vcpu_register_runstate_memory_area area;
+        struct vcpu_runstate_info runstate;
+
+        rc = -EFAULT;
+        if ( copy_from_guest(&area, arg, 1) )
+            break;
+
+        if ( !guest_handle_okay(area.addr.h, 1) )
+            break;
+
+        rc = 0;
+        runstate_guest(v).handle = area.addr.h;
+        runstate_guest(v).type = RUNSTATE_PADDR;
+
+        if ( v == current )
+        {
+            __copy_to_guest_phys(runstate_guest(v).handle, &v->runstate, 1);
+        }
+        else
+        {
+            vcpu_runstate_get(v, &runstate);
+            __copy_to_guest_phys(runstate_guest(v).handle, &runstate, 1);
+        }
+
         break;
     }
 

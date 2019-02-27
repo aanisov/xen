@@ -304,6 +304,30 @@ static void update_runstate_area(struct vcpu *v)
                                 (void *)(&v->runstate.state_entry_time + 1) - 1, 1);
         }
     }
+    else if ( runstate_guest(v).type == RUNSTATE_PADDR )
+    {
+        if ( VM_ASSIST(v->domain, runstate_update_flag) )
+        {
+            guest_handle = &v->runstate_guest.handle.p->state_entry_time + 1;
+            guest_handle--;
+            v->runstate.state_entry_time |= XEN_RUNSTATE_UPDATE;
+            __raw_copy_to_guest_phys(guest_handle,
+                                (void *)(&v->runstate.state_entry_time + 1) - 1, 1);
+            smp_wmb();
+        }
+
+        __copy_to_guest_phys(runstate_guest(v).handle, &v->runstate, 1);
+
+        if ( guest_handle )
+        {
+            v->runstate.state_entry_time &= ~XEN_RUNSTATE_UPDATE;
+            smp_wmb();
+            __raw_copy_to_guest_phys(guest_handle,
+                                (void *)(&v->runstate.state_entry_time + 1) - 1, 1);
+        }
+    }
+    else
+    { /* no actions required */}
 }
 
 static void schedule_tail(struct vcpu *prev)

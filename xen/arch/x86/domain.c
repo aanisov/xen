@@ -1649,6 +1649,40 @@ bool update_runstate_area(struct vcpu *v)
                                 (void *)(&v->runstate.state_entry_time + 1) - 1, 1);
         }
     }
+    else if ( runstate_guest(v).type == RUNSTATE_PADDR )
+    {
+        if ( VM_ASSIST(v->domain, runstate_update_flag) )
+        {
+            guest_handle = has_32bit_shinfo(v->domain)
+                ? &v->runstate_guest.compat.p->state_entry_time + 1
+                : &v->runstate_guest.native.p->state_entry_time + 1;
+            guest_handle--;
+            v->runstate.state_entry_time |= XEN_RUNSTATE_UPDATE;
+            __raw_copy_to_guest_phys(guest_handle,
+                                (void *)(&v->runstate.state_entry_time + 1) - 1, 1);
+            smp_wmb();
+        }
+        
+        if ( has_32bit_shinfo(v->domain) )
+        {
+            struct compat_vcpu_runstate_info info;
+        
+            XLAT_vcpu_runstate_info(&info, &v->runstate);
+            __copy_to_guest_phys(v->runstate_guest.compat, &info, 1);
+            rc = true;
+        }
+        else
+            rc = __copy_to_guest_phys(runstate_guest(v).handle, &v->runstate, 1) !=
+                 sizeof(v->runstate);
+        
+        if ( guest_handle )
+        {
+            v->runstate.state_entry_time &= ~XEN_RUNSTATE_UPDATE;
+            smp_wmb();
+            __raw_copy_to_guest_phys(guest_handle,
+                                (void *)(&v->runstate.state_entry_time + 1) - 1, 1);
+        }
+    }
     else
     {
         rc = true;
