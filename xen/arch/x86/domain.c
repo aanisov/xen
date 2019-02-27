@@ -1610,41 +1610,48 @@ bool update_runstate_area(struct vcpu *v)
     struct guest_memory_policy policy = { .nested_guest_mode = false };
     void __user *guest_handle = NULL;
 
-    if ( guest_handle_is_null(runstate_guest(v)) )
+    if ( guest_handle_is_null(runstate_guest(v).handle) )
         return true;
 
     update_guest_memory_policy(v, &policy);
 
-    if ( VM_ASSIST(v->domain, runstate_update_flag) )
+    if ( runstate_guest(v).type == RUNSTATE_VADDR )
     {
-        guest_handle = has_32bit_shinfo(v->domain)
-            ? &v->runstate_guest.compat.p->state_entry_time + 1
-            : &v->runstate_guest.native.p->state_entry_time + 1;
-        guest_handle--;
-        v->runstate.state_entry_time |= XEN_RUNSTATE_UPDATE;
-        __raw_copy_to_guest(guest_handle,
-                            (void *)(&v->runstate.state_entry_time + 1) - 1, 1);
-        smp_wmb();
-    }
+        if ( VM_ASSIST(v->domain, runstate_update_flag) )
+        {
+            guest_handle = has_32bit_shinfo(v->domain)
+                ? &v->runstate_guest.compat.p->state_entry_time + 1
+                : &v->runstate_guest.native.p->state_entry_time + 1;
+            guest_handle--;
+            v->runstate.state_entry_time |= XEN_RUNSTATE_UPDATE;
+            __raw_copy_to_guest(guest_handle,
+                                (void *)(&v->runstate.state_entry_time + 1) - 1, 1);
+            smp_wmb();
+        }
 
-    if ( has_32bit_shinfo(v->domain) )
-    {
-        struct compat_vcpu_runstate_info info;
+        if ( has_32bit_shinfo(v->domain) )
+        {
+            struct compat_vcpu_runstate_info info;
 
-        XLAT_vcpu_runstate_info(&info, &v->runstate);
-        __copy_to_guest(v->runstate_guest.compat, &info, 1);
-        rc = true;
+            XLAT_vcpu_runstate_info(&info, &v->runstate);
+            __copy_to_guest(v->runstate_guest.compat, &info, 1);
+            rc = true;
+        }
+        else
+            rc = __copy_to_guest(runstate_guest(v).handle, &v->runstate, 1) !=
+                 sizeof(v->runstate);
+
+        if ( guest_handle )
+        {
+            v->runstate.state_entry_time &= ~XEN_RUNSTATE_UPDATE;
+            smp_wmb();
+            __raw_copy_to_guest(guest_handle,
+                                (void *)(&v->runstate.state_entry_time + 1) - 1, 1);
+        }
     }
     else
-        rc = __copy_to_guest(runstate_guest(v), &v->runstate, 1) !=
-             sizeof(v->runstate);
-
-    if ( guest_handle )
     {
-        v->runstate.state_entry_time &= ~XEN_RUNSTATE_UPDATE;
-        smp_wmb();
-        __raw_copy_to_guest(guest_handle,
-                            (void *)(&v->runstate.state_entry_time + 1) - 1, 1);
+        rc = true;
     }
 
     update_guest_memory_policy(v, &policy);
