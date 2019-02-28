@@ -275,7 +275,7 @@ static void ctxt_switch_to(struct vcpu *n)
 }
 
 /* Update per-VCPU guest runstate shared memory area (if registered). */
-static void update_runstate_area(struct vcpu *v)
+void update_runstate_area(struct vcpu *v)
 {
     if ( guest_handle_is_null(runstate_guest(v).handle) )
         return;
@@ -303,6 +303,16 @@ static void update_runstate_area(struct vcpu *v)
                                 (void *)(&v->runstate.state_entry_time + 1) - 1, 1);
         }
     }
+    else if ( runstate_guest(v).type == RUNSTATE_PADDR )
+    {
+        v->runstate.state_entry_time |= XEN_RUNSTATE_UPDATE;
+        runstate_guest(v).handle.p->state_entry_time |= XEN_RUNSTATE_UPDATE;
+        memcpy(runstate_guest(v).handle.p, &v->runstate, sizeof(v->runstate));
+        runstate_guest(v).handle.p->state_entry_time &= ~XEN_RUNSTATE_UPDATE;
+        v->runstate.state_entry_time &= ~XEN_RUNSTATE_UPDATE;
+    }
+    else
+    { /*No actions required*/ }
 }
 
 static void schedule_tail(struct vcpu *prev)
