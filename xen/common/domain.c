@@ -738,7 +738,14 @@ int domain_kill(struct domain *d)
         if ( cpupool_move_domain(d, cpupool0) )
             return -ERESTART;
         for_each_vcpu ( d, v )
+        {
+            if ( v->runstate_guest_type == RUNSTATE_VADDR )
+                set_xen_guest_handle(runstate_guest(v), NULL);
+            else
+                unmap_runstate_area(v);
+
             unmap_vcpu_info(v);
+        }
         d->is_dying = DOMDYING_dead;
         /* Mem event cleanup has to go here because the rings 
          * have to be put before we call put_domain. */
@@ -1192,7 +1199,11 @@ int domain_soft_reset(struct domain *d)
 
     for_each_vcpu ( d, v )
     {
-        set_xen_guest_handle(runstate_guest(v), NULL);
+        if ( v->runstate_guest_type == RUNSTATE_VADDR )
+            set_xen_guest_handle(runstate_guest(v), NULL);
+        else
+            unmap_runstate_area(v);
+
         unmap_vcpu_info(v);
     }
 
@@ -1330,6 +1341,65 @@ void unmap_vcpu_info(struct vcpu *v)
 
     vcpu_info_reset(v); /* NB: Clobbers v->vcpu_info_mfn */
 
+    put_page_and_type(mfn_to_page(mfn));
+}
+
+int map_runstate_area(struct vcpu *v,
+                      struct vcpu_register_runstate_memory_area *area)
+{
+    unsigned long offset = area->addr.p & ~PAGE_MASK;
+    gfn_t gfn = gaddr_to_gfn(area->addr.p);
+    struct domain *d = v->domain;
+    void *mapping;
+    struct page_info *page;
+    size_t size = sizeof (struct vcpu_runstate_info );
+
+    ASSERT(v->runstate_guest_type == RUNSTATE_PADDR );
+
+    if ( offset > (PAGE_SIZE - size) )
+        return -EINVAL;
+
+    page = get_page_from_gfn(d, gfn_x(gfn), NULL, P2M_ALLOC);
+    if ( !page )
+        return -EINVAL;
+
+    if ( !get_page_type(page, PGT_writable_page) )
+    {
+        put_page(page);
+        return -EINVAL;
+    }
+
+    mapping = __map_domain_page_global(page);
+
+    if ( mapping == NULL )
+    {
+        put_page_and_type(page);
+        return -ENOMEM;
+    }
+
+    runstate_guest(v).p = mapping + offset;
+
+    return 0;
+}
+
+void unmap_runstate_area(struct vcpu *v)
+{
+    mfn_t mfn;
+
+    if ( v->runstate_guest_type != RUNSTATE_PADDR )
+        return;
+
+    if ( guest_handle_is_null(runstate_guest(v)) )
+        return;
+
+    mfn = _mfn(virt_to_mfn(runstate_guest(v).p));
+
+    unmap_domain_page_global((void *)
+                             ((unsigned long)runstate_guest(v).p &
+                              PAGE_MASK));
+
+    v->runstate_guest_type = RUNSTATE_NONE;
+    runstate_guest(v).p = NULL;
     put_page_and_type(mfn_to_page(mfn));
 }
 
@@ -1532,13 +1602,29 @@ long do_vcpu_op(int cmd, unsigned int vcpuid, XEN_GUEST_HANDLE_PARAM(void) arg)
             vcpu_runstate_get(v, &runstate);
             __copy_to_guest(runstate_guest(v), &runstate, 1);
         }
-
         break;
     }
 
     case VCPUOP_register_runstate_phys_memory_area:
     {
-        rc = -ENOSYS;
+        struct vcpu_register_runstate_memory_area area;
+
+        rc = -EFAULT;
+        if ( copy_from_guest(&area, arg, 1) )
+            break;
+
+        unmap_runstate_area(v);
+        v->runstate_guest_type = RUNSTATE_PADDR;
+        rc = map_runstate_area(v, &area);
+
+        if ( rc )
+        {
+            v->runstate_guest_type = RUNSTATE_NONE;
+            break;
+        }
+
+        update_runstate_area(v);
+
         break;
     }
 
