@@ -217,6 +217,8 @@ void vcpu_show_execution_state(struct vcpu *);
 void vcpu_show_registers(const struct vcpu *);
 void vcpu_switch_to_aarch64_mode(struct vcpu *);
 
+void update_runstate_area(struct vcpu *);
+
 /*
  * Due to the restriction of GICv3, the number of vCPUs in AFF0 is
  * limited to 16, thus only the first 4 bits of AFF0 are legal. We will
