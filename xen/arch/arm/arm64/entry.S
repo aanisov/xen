@@ -212,7 +212,7 @@ hyp_irq:
         entry   hyp=1
         msr     daifclr, #4
         mov     x0, sp
-        bl      do_trap_irq
+        bl      do_trap_hyp_irq
         exit    hyp=1
 
 guest_sync:
@@ -322,7 +322,7 @@ guest_irq:
                     SKIP_SYNCHRONIZE_SERROR_ENTRY_EXIT)
         msr     daifclr, #4
         mov     x0, sp
-        bl      do_trap_irq
+        bl      do_trap_guest_irq
 1:
         exit    hyp=0, compat=0
 
@@ -365,7 +365,7 @@ guest_irq_compat:
                     SKIP_SYNCHRONIZE_SERROR_ENTRY_EXIT)
         msr     daifclr, #4
         mov     x0, sp
-        bl      do_trap_irq
+        bl      do_trap_guest_irq
 1:
         exit    hyp=0, compat=1
 
