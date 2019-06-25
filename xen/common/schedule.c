@@ -216,6 +216,28 @@ uint64_t get_cpu_idle_time(unsigned int cpu)
     if ( cpu_online(cpu) && v )
         vcpu_runstate_get(v, &state);
 
+    return state.time[RUNSTATE_blocked];
+}
+
+uint64_t get_cpu_guest_time(unsigned int cpu)
+{
+    struct vcpu_runstate_info state = { 0 };
+    struct vcpu *v = idle_vcpu[cpu];
+
+    if ( cpu_online(cpu) && v )
+        vcpu_runstate_get(v, &state);
+
+    return state.time[RUNSTATE_runnable];
+}
+
+uint64_t get_cpu_hyp_time(unsigned int cpu)
+{
+    struct vcpu_runstate_info state = { 0 };
+    struct vcpu *v = idle_vcpu[cpu];
+
+    if ( cpu_online(cpu) && v )
+        vcpu_runstate_get(v, &state);
+
     return state.time[RUNSTATE_running];
 }
 
@@ -918,6 +940,8 @@ int vcpu_set_soft_affinity(struct vcpu *v, const cpumask_t *affinity)
 void vcpu_block(void)
 {
     struct vcpu *v = current;
+
+    ASSERT(!is_idle_vcpu(v));
 
     set_bit(_VPF_blocked, &v->pause_flags);
 
