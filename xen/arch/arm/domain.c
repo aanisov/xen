@@ -19,6 +19,7 @@
 #include <xen/sched.h>
 #include <xen/softirq.h>
 #include <xen/wait.h>
+#include <xen/sched-if.h>
 
 #include <asm/alternative.h>
 #include <asm/cpuerrata.h>
@@ -41,20 +42,41 @@
 
 DEFINE_PER_CPU(struct vcpu *, curr_vcpu);
 
-static void do_idle(void)
+static inline void vcpu_runstate_change_locked(
+    unsigned int cpu, int new_state, s_time_t new_entry_time)
 {
-    unsigned int cpu = smp_processor_id();
+    s_time_t delta;
+    struct vcpu *v = idle_vcpu[cpu];
+    spin_lock(per_cpu(schedule_data, cpu).schedule_lock);
 
+    ASSERT(v == current);
+    ASSERT(v->runstate.state != new_state);
+
+    delta = new_entry_time - v->runstate.state_entry_time;
+    if ( delta > 0 )
+    {
+        v->runstate.time[v->runstate.state] += delta;
+        v->runstate.state_entry_time = new_entry_time;
+    }
+
+    v->runstate.state = new_state;
+    spin_unlock(per_cpu(schedule_data, cpu).schedule_lock);
+}
+
+static void do_idle(unsigned int cpu)
+{
     sched_tick_suspend();
     /* sched_tick_suspend() can raise TIMER_SOFTIRQ. Process it now. */
     process_pending_softirqs();
 
     local_irq_disable();
+    vcpu_runstate_change_locked(cpu, RUNSTATE_blocked, NOW());
     if ( cpu_is_haltable(cpu) )
     {
         dsb(sy);
         wfi();
     }
+    vcpu_runstate_change_locked(cpu, RUNSTATE_running, NOW());
     local_irq_enable();
 
     sched_tick_resume();
@@ -79,7 +101,7 @@ void idle_loop(void)
          */
         else if ( !softirq_pending(cpu) && !scrub_free_pages() &&
                   !softirq_pending(cpu) )
-            do_idle();
+            do_idle(cpu);
 
         do_softirq();
         /*
