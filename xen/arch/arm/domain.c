@@ -321,7 +321,7 @@ void update_runstate_area(struct vcpu *v)
     }
 }
 
-static void schedule_tail(struct vcpu *prev)
+static void ctxt_switch_tail(struct vcpu *prev)
 {
     ASSERT(prev != current);
 
@@ -344,7 +344,7 @@ static void continue_new_vcpu(struct vcpu *prev)
     current->arch.actlr = READ_SYSREG32(ACTLR_EL1);
     processor_vcpu_initialise(current);
 
-    schedule_tail(prev);
+    ctxt_switch_tail(prev);
 
     if ( is_idle_vcpu(current) )
         reset_stack_and_jump(idle_loop);
@@ -381,7 +381,7 @@ void context_switch(struct vcpu *prev, struct vcpu *next)
 
     prev = __context_switch(prev, next);
 
-    schedule_tail(prev);
+    ctxt_switch_tail(prev);
 }
 
 void continue_running(struct vcpu *same)
