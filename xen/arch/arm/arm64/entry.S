@@ -205,6 +205,8 @@ hyp_sync:
 
 hyp_irq:
         entry   hyp=1
+        mov     x0,#5
+        bl      hyp_tacc_head
         msr     daifclr, #4
         mov     x0, sp
         bl      do_trap_irq
@@ -307,6 +309,10 @@ guest_sync_slowpath:
 
 guest_irq:
         entry   hyp=0, compat=0
+
+        mov     x0,#5
+        bl      hyp_tacc_head
+
         /*
          * The vSError will be checked while SKIP_SYNCHRONIZE_SERROR_ENTRY_EXIT
          * is not set. If a vSError took place, the initial exception will be
@@ -350,6 +356,10 @@ guest_sync_compat:
 
 guest_irq_compat:
         entry   hyp=0, compat=1
+
+        mov     x0,#5
+        bl      hyp_tacc_head
+
         /*
          * The vSError will be checked while SKIP_SYNCHRONIZE_SERROR_ENTRY_EXIT
          * is not set. If a vSError took place, the initial exception will be
