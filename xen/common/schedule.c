@@ -1538,6 +1538,80 @@ static void schedule(void)
     context_switch(prev, next);
 }
 
+DEFINE_PER_CPU(int, hyp_tacc_cnt);
+
+static void hyp_tacc_head_cpu(unsigned int cpu)
+{
+//    printk("\t\thyp_tacc_head_cpu cpu %u, cnt %d\n", cpu, per_cpu(hyp_tacc_cnt, cpu));
+
+    ASSERT(per_cpu(hyp_tacc_cnt, cpu) >= 0);
+
+    if ( per_cpu(hyp_tacc_cnt, cpu) == 0 )
+    {
+        /*
+         * Stop time accounting for guest (guest vcpu)
+         * Start time accounting for hyp (idle vcpu)
+         */
+         barrier();
+    }
+
+    per_cpu(hyp_tacc_cnt, cpu)++;
+}
+
+static void hyp_tacc_tail_cpu(unsigned int cpu)
+{
+//    printk("\t\thyp_tacc_tail_cpu cpu %u, cnt %d\n", cpu, per_cpu(hyp_tacc_cnt, cpu));
+
+    ASSERT(per_cpu(hyp_tacc_cnt, cpu) > 0);
+
+    if (per_cpu(hyp_tacc_cnt, cpu) == 1)
+    {
+        /*
+         * Stop time accounting for guest (guest vcpu)
+         * Start time accounting for hyp (idle vcpu)
+         */
+         barrier();
+    }
+
+    per_cpu(hyp_tacc_cnt, cpu)--;
+}
+
+void hyp_tacc_head(int place)
+{
+    //printk("\thead cpu %u, place %d, cnt %d\n", smp_processor_id(), place, this_cpu(hyp_tacc_cnt));
+
+    ASSERT(this_cpu(hyp_tacc_cnt) >= 0);
+
+    if ( this_cpu(hyp_tacc_cnt) == 0 )
+    {
+        /*
+         * Stop time accounting for guest (guest vcpu)
+         * Start time accounting for hyp (idle vcpu)
+         */
+         barrier();
+    }
+
+    this_cpu(hyp_tacc_cnt)++;
+}
+
+void hyp_tacc_tail(int place)
+{
+    //printk("\t\t\t\ttail cpu %u, place %d, cnt %d\n", smp_processor_id(), place, this_cpu(hyp_tacc_cnt));
+
+    ASSERT(this_cpu(hyp_tacc_cnt) > 0);
+
+    if (this_cpu(hyp_tacc_cnt) == 1)
+    {
+        /*
+         * Stop time accounting for guest (guest vcpu)
+         * Start time accounting for hyp (idle vcpu)
+         */
+         barrier();
+    }
+
+    this_cpu(hyp_tacc_cnt)--;
+}
+
 void context_saved(struct vcpu *prev)
 {
     /* Clear running flag /after/ writing context to memory. */
@@ -1595,7 +1669,9 @@ static int cpu_schedule_up(unsigned int cpu)
     init_timer(&sd->s_timer, s_timer_fn, NULL, cpu);
     atomic_set(&sd->urgent_count, 0);
 
-    /* Boot CPU is dealt with later in schedule_init(). */
+    hyp_tacc_head_cpu(cpu);
+
+    /* Boot CPU is dealt with later in scheduler_init(). */
     if ( cpu == 0 )
         return 0;
 
@@ -1651,6 +1727,8 @@ static void cpu_schedule_down(unsigned int cpu)
     sd->sched_priv = NULL;
 
     kill_timer(&sd->s_timer);
+
+    hyp_tacc_tail_cpu(cpu);
 }
 
 static int cpu_schedule_callback(
