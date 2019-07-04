@@ -998,6 +998,10 @@ extern void dump_runq(unsigned char key);
 
 void arch_do_physinfo(struct xen_sysctl_physinfo *pi);
 
+void hyp_tacc_head(int place);
+void hyp_tacc_tail(int place);
+
+
 #endif /* __SCHED_H__ */
 
 /*
