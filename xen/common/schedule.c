@@ -1571,21 +1571,19 @@ static void schedule(void)
              (now - next->runstate.state_entry_time) : 0,
              next_slice.time);
 
-    ASSERT(prev->runstate.state == RUNSTATE_running);
+//    ASSERT(prev->runstate.state == RUNSTATE_running);
 
     TRACE_4D(TRC_SCHED_SWITCH,
              prev->domain->domain_id, prev->vcpu_id,
              next->domain->domain_id, next->vcpu_id);
 
-    vcpu_runstate_change(
-        prev,
-        ((prev->pause_flags & VPF_blocked) ? RUNSTATE_blocked :
-         (vcpu_runnable(prev) ? RUNSTATE_runnable : RUNSTATE_offline)),
-        now);
+    if ( !vcpu_runnable(prev) )
+        vcpu_runstate_change(
+            prev,
+            ((prev->pause_flags & VPF_blocked) ? RUNSTATE_blocked :
+             RUNSTATE_offline),
+            now);
     prev->last_run_time = now;
-
-    ASSERT(next->runstate.state != RUNSTATE_running);
-    vcpu_runstate_change(next, RUNSTATE_running, now);
 
     /*
      * NB. Don't add any trace records from here until the actual context
@@ -1655,11 +1653,18 @@ void hyp_tacc_head(int place)
 
     if ( this_cpu(hyp_tacc_cnt) == 0 )
     {
+        s_time_t now = NOW();
+        spin_lock(per_cpu(schedule_data,smp_processor_id()).schedule_lock);
         /*
          * Stop time accounting for guest (guest vcpu)
+         */
+        //ASSERT(is_idle_vcpu(current));
+        vcpu_runstate_change(current, RUNSTATE_runnable, now);
+        /*
          * Start time accounting for hyp (idle vcpu)
          */
-         barrier();
+        vcpu_runstate_change(idle_vcpu[smp_processor_id()], RUNSTATE_running, now);
+        spin_unlock(per_cpu(schedule_data,smp_processor_id()).schedule_lock);
     }
 
     this_cpu(hyp_tacc_cnt)++;
@@ -1673,11 +1678,18 @@ void hyp_tacc_tail(int place)
 
     if (this_cpu(hyp_tacc_cnt) == 1)
     {
+        s_time_t now = NOW();
+        spin_lock(per_cpu(schedule_data,smp_processor_id()).schedule_lock);
+        //ASSERT(is_idle_vcpu(current));
         /*
          * Stop time accounting for guest (guest vcpu)
+         */
+        vcpu_runstate_change(idle_vcpu[smp_processor_id()], RUNSTATE_runnable, now);
+        /*
          * Start time accounting for hyp (idle vcpu)
          */
-         barrier();
+        vcpu_runstate_change(current, RUNSTATE_running, now);
+        spin_unlock(per_cpu(schedule_data,smp_processor_id()).schedule_lock);
     }
 
     this_cpu(hyp_tacc_cnt)--;
