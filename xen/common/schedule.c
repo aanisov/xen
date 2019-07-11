@@ -1521,6 +1521,7 @@ static void schedule(void)
 
     ASSERT(!next->is_running);
     next->is_running = 1;
+    next->runtime = 0;
 
     pcpu_schedule_unlock_irq(lock, cpu);
 
@@ -1588,6 +1589,8 @@ void hyp_tacc_head(int place)
          * Stop time accounting for guest (guest vcpu)
          */
         //ASSERT(is_idle_vcpu(current));
+        current->runtime += now -
+            (current->runstate.state_entry_time & ~XEN_RUNSTATE_UPDATE);
         vcpu_runstate_change(current, RUNSTATE_runnable, now);
         /*
          * Start time accounting for hyp (idle vcpu)
