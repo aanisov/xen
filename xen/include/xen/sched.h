@@ -174,6 +174,8 @@ struct vcpu
     };
 #endif
 
+    s_time_t runtime;
+
     /* Has the FPU been initialised? */
     bool             fpu_initialised;
     /* Has the FPU been used since it was last saved? */
