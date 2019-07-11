@@ -176,6 +176,7 @@ struct vcpu
 
     /* last time when vCPU is scheduled out */
     uint64_t last_run_time;
+    s_time_t runtime;
 
     /* Has the FPU been initialised? */
     bool             fpu_initialised;
