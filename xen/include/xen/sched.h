@@ -163,15 +163,15 @@ struct vcpu
     void            *sched_priv;    /* scheduler-specific data */
 
     struct vcpu_runstate_info runstate;
-    mfn_t runstate_mfn[2];
-    unsigned int runstate_nr;
 #ifndef CONFIG_COMPAT
-    struct vcpu_runstate_info *runstate_guest;
+# define runstate_guest(v) ((v)->runstate_guest)
+    XEN_GUEST_HANDLE(vcpu_runstate_info_t) runstate_guest; /* guest address */
 #else
+# define runstate_guest(v) ((v)->runstate_guest.native)
     union {
-        struct vcpu_runstate_info *runstate_guest;
-        struct compat_vcpu_runstate_info *compat_runstate_guest;
-    };
+        XEN_GUEST_HANDLE(vcpu_runstate_info_t) native;
+        XEN_GUEST_HANDLE(vcpu_runstate_info_compat_t) compat;
+    } runstate_guest; /* guest address */
 #endif
 
     s_time_t runtime;
