@@ -277,25 +277,31 @@ static void ctxt_switch_to(struct vcpu *n)
 }
 
 /* Update per-VCPU guest runstate shared memory area (if registered). */
-void update_runstate_area(struct vcpu *v)
+static void update_runstate_area(struct vcpu *v)
 {
-    if ( !v->runstate_guest )
+    void __user *guest_handle = NULL;
+
+    if ( guest_handle_is_null(runstate_guest(v)) )
         return;
 
     if ( VM_ASSIST(v->domain, runstate_update_flag) )
     {
+        guest_handle = &v->runstate_guest.p->state_entry_time + 1;
+        guest_handle--;
         v->runstate.state_entry_time |= XEN_RUNSTATE_UPDATE;
-        v->runstate_guest->state_entry_time |= XEN_RUNSTATE_UPDATE;
+        __raw_copy_to_guest(guest_handle,
+                            (void *)(&v->runstate.state_entry_time + 1) - 1, 1);
         smp_wmb();
     }
 
-    memcpy(v->runstate_guest, &v->runstate, sizeof(v->runstate));
+    __copy_to_guest(runstate_guest(v), &v->runstate, 1);
 
-    if ( VM_ASSIST(v->domain, runstate_update_flag) )
+    if ( guest_handle )
     {
         v->runstate.state_entry_time &= ~XEN_RUNSTATE_UPDATE;
         smp_wmb();
-        v->runstate_guest->state_entry_time &= ~XEN_RUNSTATE_UPDATE;
+        __raw_copy_to_guest(guest_handle,
+                            (void *)(&v->runstate.state_entry_time + 1) - 1, 1);
     }
 }
 
