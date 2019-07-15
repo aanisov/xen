@@ -1595,22 +1595,26 @@ void paravirt_ctxt_switch_to(struct vcpu *v)
 }
 
 /* Update per-VCPU guest runstate shared memory area (if registered). */
-void update_runstate_area(struct vcpu *v)
+bool update_runstate_area(struct vcpu *v)
 {
+    bool rc;
     struct guest_memory_policy policy = { .nested_guest_mode = false };
+    void __user *guest_handle = NULL;
 
-    if ( !v->runstate_guest )
-        return;
+    if ( guest_handle_is_null(runstate_guest(v)) )
+        return true;
 
     update_guest_memory_policy(v, &policy);
 
     if ( VM_ASSIST(v->domain, runstate_update_flag) )
     {
+        guest_handle = has_32bit_shinfo(v->domain)
+            ? &v->runstate_guest.compat.p->state_entry_time + 1
+            : &v->runstate_guest.native.p->state_entry_time + 1;
+        guest_handle--;
         v->runstate.state_entry_time |= XEN_RUNSTATE_UPDATE;
-        if ( has_32bit_shinfo((v)->domain) )
-            v->compat_runstate_guest->state_entry_time |= XEN_RUNSTATE_UPDATE;
-        else
-            v->runstate_guest->state_entry_time |= XEN_RUNSTATE_UPDATE;
+        __raw_copy_to_guest(guest_handle,
+                            (void *)(&v->runstate.state_entry_time + 1) - 1, 1);
         smp_wmb();
     }
 
@@ -1619,22 +1623,31 @@ void update_runstate_area(struct vcpu *v)
         struct compat_vcpu_runstate_info info;
 
         XLAT_vcpu_runstate_info(&info, &v->runstate);
-        memcpy(v->compat_runstate_guest, &info, sizeof(info));
+        __copy_to_guest(v->runstate_guest.compat, &info, 1);
+        rc = true;
     }
     else
-        memcpy(v->runstate_guest, &v->runstate, sizeof(v->runstate));
+        rc = __copy_to_guest(runstate_guest(v), &v->runstate, 1) !=
+             sizeof(v->runstate);
 
-    if ( VM_ASSIST(v->domain, runstate_update_flag) )
+    if ( guest_handle )
     {
         v->runstate.state_entry_time &= ~XEN_RUNSTATE_UPDATE;
         smp_wmb();
-        if ( has_32bit_shinfo((v)->domain) )
-            v->compat_runstate_guest->state_entry_time &= ~XEN_RUNSTATE_UPDATE;
-        else
-            v->runstate_guest->state_entry_time &= ~XEN_RUNSTATE_UPDATE;
+        __raw_copy_to_guest(guest_handle,
+                            (void *)(&v->runstate.state_entry_time + 1) - 1, 1);
     }
 
     update_guest_memory_policy(v, &policy);
+
+    return rc;
+}
+
+static void _update_runstate_area(struct vcpu *v)
+{
+    if ( !update_runstate_area(v) && is_pv_vcpu(v) &&
+         !(v->arch.flags & TF_kernel_mode) )
+        v->arch.pv.need_update_runstate_area = 1;
 }
 
 /*
@@ -1787,7 +1800,7 @@ void context_switch(struct vcpu *prev, struct vcpu *next)
         flush_mask(cpumask_of(dirty_cpu), FLUSH_VCPU_STATE);
     }
 
-    update_runstate_area(prev);
+    _update_runstate_area(prev);
     vpmu_switch_from(prev);
     np2m_schedule(NP2M_SCHEDLE_OUT);
 
@@ -1846,7 +1859,7 @@ void context_switch(struct vcpu *prev, struct vcpu *next)
 
     context_saved(prev);
 
-    update_runstate_area(next);
+    _update_runstate_area(next);
     /* Must be done with interrupts enabled */
     vpmu_switch_to(next);
     np2m_schedule(NP2M_SCHEDLE_IN);
