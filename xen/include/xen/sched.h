@@ -932,6 +932,11 @@ void restore_vcpu_affinity(struct domain *d);
 
 void vcpu_runstate_get(struct vcpu *v, struct vcpu_runstate_info *runstate);
 uint64_t get_cpu_idle_time(unsigned int cpu);
+uint64_t get_cpu_hyp_time(unsigned int cpu);
+uint64_t get_cpu_guest_time(unsigned int cpu);
+uint64_t get_cpu_gsync_time(unsigned int cpu);
+uint64_t get_cpu_irq_time(unsigned int cpu);
+
 void sched_guest_idle(void (*idle) (void), unsigned int cpu);
 void scheduler_enable(void);
 void scheduler_disable(void);
