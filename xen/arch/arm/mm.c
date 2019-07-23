@@ -1199,12 +1199,6 @@ static int xen_pt_update(unsigned long virt,
         return -EINVAL;
     }
 
-    if ( !IS_ALIGNED(virt, PAGE_SIZE) )
-    {
-        mm_printk("The virtual address is not aligned to the page-size.\n");
-        return -EINVAL;
-    }
-
     spin_lock(&xen_pt_lock);
 
     for ( ; addr < addr_end; addr += PAGE_SIZE )
