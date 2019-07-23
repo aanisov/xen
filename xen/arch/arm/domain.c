@@ -61,7 +61,7 @@ static inline void idle_vcpu_runstate_change(
     }
 
     v->runstate.state = new_state;
-    vcpu_schedule_unlock_irq(lock, v)
+    vcpu_schedule_unlock_irq(lock, v);
 }
 
 static void do_idle(void)
