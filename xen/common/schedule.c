@@ -208,35 +208,36 @@ void vcpu_runstate_get(struct vcpu *v, struct vcpu_runstate_info *runstate)
 
 uint64_t get_cpu_idle_time(unsigned int cpu)
 {
-    struct vcpu_runstate_info state = { 0 };
-    struct vcpu *v = idle_vcpu[cpu];
+    struct tacc *tacc = &per_cpu(tacc, cpu);
 
-    if ( cpu_online(cpu) && v )
-        vcpu_runstate_get(v, &state);
-
-    return state.time[RUNSTATE_running];
+    return tacc->state_time[TACC_IDLE];
 }
 
 uint64_t get_cpu_guest_time(unsigned int cpu)
 {
-    struct vcpu_runstate_info state = { 0 };
-    struct vcpu *v = idle_vcpu[cpu];
+    struct tacc *tacc = &per_cpu(tacc, cpu);
 
-    if ( cpu_online(cpu) && v )
-        vcpu_runstate_get(v, &state);
-
-    return state.time[RUNSTATE_runnable];
+    return tacc->state_time[TACC_GUEST];
 }
 
 uint64_t get_cpu_hyp_time(unsigned int cpu)
 {
-    struct vcpu_runstate_info state = { 0 };
-    struct vcpu *v = idle_vcpu[cpu];
+    struct tacc *tacc = &per_cpu(tacc, cpu);
 
-    if ( cpu_online(cpu) && v )
-        vcpu_runstate_get(v, &state);
+    return tacc->state_time[TACC_HYP];
+}
 
-    return state.time[RUNSTATE_running];
+uint64_t get_cpu_irq_time(unsigned int cpu)
+{
+    struct tacc *tacc = &per_cpu(tacc, cpu);
+
+    return tacc->state_time[TACC_IRQ];
+}
+uint64_t get_cpu_gsync_time(unsigned int cpu)
+{
+    struct tacc *tacc = &per_cpu(tacc, cpu);
+
+    return tacc->state_time[TACC_GSYNC];
 }
 
 /*
@@ -1559,6 +1560,89 @@ static void schedule(void)
     vcpu_periodic_timer_work(next);
 
     context_switch(prev, next);
+}
+
+DEFINE_PER_CPU(struct tacc, tacc);
+
+static void tacc_state_change(enum TACC_STATES new_state)
+{
+    s_time_t now, delta;
+    struct tacc* tacc = &this_cpu(tacc);
+    unsigned long flags;
+
+    local_irq_save(flags);
+    now = NOW();
+    delta = now - tacc->state_entry_time;
+
+    /* We are not expecting states reenterability (at least through this function)*/
+    ASSERT(new_state != tacc->state);
+
+
+    tacc->state_time[tacc->state] += delta;
+    tacc->state = new_state;
+    tacc->state_entry_time = now;
+    local_irq_restore(flags);
+}
+
+void tacc_hyp(int place)
+{
+//    printk("\ttacc_hyp %u, place %d\n", smp_processor_id(), place);
+    tacc_state_change(TACC_HYP);
+}
+
+void tacc_guest(int place)
+{
+//    printk("\ttacc_guest %u, place %d\n", smp_processor_id(), place);
+    tacc_state_change(TACC_GUEST);
+}
+
+void tacc_idle(int place)
+{
+//    printk("\tidle cpu %u, place %d\n", smp_processor_id(), place);
+    tacc_state_change(TACC_IDLE);
+}
+
+void tacc_gsync(int place)
+{
+//    printk("\ttacc_gsync %u, place %d\n", smp_processor_id(), place);
+    tacc_state_change(TACC_GSYNC);
+}
+
+void tacc_irq_enter(int place)
+{
+#if 0
+    struct tacc* tacc = &this_cpu(tacc);
+
+//    printk("\ttacc_irq_enter %u, place %d, cnt %d\n", smp_processor_id(), place, this_cpu(tacc).irq_cnt);
+    ASSERT(!local_irq_is_enabled());
+    ASSERT(tacc->irq_cnt >= 0);
+
+    if ( tacc->irq_cnt == 0 )
+    {
+        tacc->irq_enter_time = NOW();
+    }
+
+    tacc->irq_cnt++;
+#endif
+}
+
+void tacc_irq_exit(int place)
+{
+#if 0
+    struct tacc* tacc = &this_cpu(tacc);
+
+//    printk("\ttacc_irq_exit %u, place %d, cnt %d\n", smp_processor_id(), place, tacc->irq_cnt);
+    ASSERT(!local_irq_is_enabled());
+    ASSERT(tacc->irq_cnt > 0);
+    if ( tacc->irq_cnt == 1 )
+    {
+        s_time_t now = NOW();
+        tacc->state_time_delta[TACC_IRQ] = now - tacc->irq_enter_time;
+        tacc->irq_enter_time = 0;
+    }
+
+    tacc->irq_cnt--;
+#endif
 }
 
 void context_saved(struct vcpu *prev)
