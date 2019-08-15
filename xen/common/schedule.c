@@ -1560,15 +1560,115 @@ static void schedule(void)
     context_switch(prev, next);
 }
 
-DEFINE_PER_CPU(int, hyp_tacc_cnt);
+enum TACC_STATES {
+    TACC_HYP = 0,
+    TACC_GUEST = 1,
+    TACC_IDLE = 2,
+    TACC_IRQ = 3,
+    TACC_GSYNC = 4,
+    TACC_STATES_MAX
+};
 
+struct tacc
+{
+    s_time_t state_time[TACC_STATES_MAX];
+    s_time_t state_time_delta[TACC_STATES_MAX];
+    s_time_t state_entry_time;
+    spinlock_t lock;
+    int state;
+    s_time_t irq_enter_time;
+    int irq_cnt;
+};
+DEFINE_PER_CPU(struct tacc, tacc);
+
+static void tacc_state_change(enum TACC_STATES new_state)
+{
+    s_time_t now, delta;
+    struct tacc* tacc = &this_cpu(tacc);
+
+    local_irq_disable();
+    now = NOW();
+    delta = now - this_cpu(tacc).state_entry_time;
+
+//    /* We are not going through this path with IRQ*/
+//    ASSERT(new_state != TACC_IRQ);
+//    ASSERT(tacc->state != TACC_IRQ);
+    /* We are not expecting reenterability for states other that IRQ */
+    ASSERT(new_state != tacc->state);
+
+
+    tacc->state_time_delta[this_cpu(tacc).state] += delta;
+    tacc->state = new_state;
+    tacc->state_entry_time = now;
+    local_irq_enable();
+}
+
+void tacc_hyp(int place)
+{
+//    printk("\ttacc_hyp %u, place %d\n", smp_processor_id(), place);
+    tacc_state_change(TACC_HYP);
+}
+
+void tacc_guest(int place)
+{
+//    printk("\ttacc_guest %u, place %d\n", smp_processor_id(), place);
+    tacc_state_change(TACC_GUEST);
+}
+
+void tacc_idle(int place)
+{
+    printk("\thead cpu %u, place %d\n", smp_processor_id(), place);
+    tacc_state_change(TACC_IDLE);
+}
+
+void tacc_gsync(int place)
+{
+//    printk("\ttacc_gsync %u, place %d\n", smp_processor_id(), place);
+    tacc_state_change(TACC_GSYNC);
+}
+
+void tacc_irq_enter(int place)
+{
+    struct tacc* tacc = &this_cpu(tacc);
+
+//    printk("\ttacc_irq_enter %u, place %d, cnt %d\n", smp_processor_id(), place, this_cpu(tacc).irq_cnt);
+    ASSERT(!local_irq_is_enabled());
+    ASSERT(tacc->irq_cnt >= 0);
+
+    if ( tacc->irq_cnt == 0 )
+    {
+        tacc->irq_enter_time = NOW();
+    }
+
+    tacc->irq_cnt++;
+}
+
+void tacc_irq_exit(int place)
+{
+    struct tacc* tacc = &this_cpu(tacc);
+
+//    printk("\ttacc_irq_exit %u, place %d, cnt %d\n", smp_processor_id(), place, tacc->irq_cnt);
+    ASSERT(!local_irq_is_enabled());
+    ASSERT(tacc->irq_cnt > 0);
+    if ( tacc->irq_cnt == 1 )
+    {
+        s_time_t now = NOW();
+        tacc->state_time_delta[TACC_IRQ] = now - tacc->irq_enter_time;
+        tacc->irq_enter_time = 0;
+//        tacc_hyp(3);
+    }
+
+    tacc->irq_cnt--;
+}
+
+#if 0 
 void hyp_tacc_head(int place)
 {
-    //printk("\thead cpu %u, place %d, cnt %d\n", smp_processor_id(), place, this_cpu(hyp_tacc_cnt));
+    //printk("\thead cpu %u, place %d, cnt %d\n", smp_processor_id(), place, this_cpu(tacc).cnt);
 
-    ASSERT(this_cpu(hyp_tacc_cnt) >= 0);
+    ASSERT(this_cpu(tacc).cnt >= 0);
 
-    if ( this_cpu(hyp_tacc_cnt) == 0 )
+    if ( this_cpu(tacc).cnt == 0 )
     {
         s_time_t now = NOW();
         spin_lock(per_cpu(schedule_data,smp_processor_id()).schedule_lock);
@@ -1585,16 +1685,16 @@ void hyp_tacc_head(int place)
         spin_unlock(per_cpu(schedule_data,smp_processor_id()).schedule_lock);
     }
 
-    this_cpu(hyp_tacc_cnt)++;
+    this_cpu(tacc).cnt++;
 }
 
 void hyp_tacc_tail(int place)
 {
-    //printk("\t\t\t\ttail cpu %u, place %d, cnt %d\n", smp_processor_id(), place, this_cpu(hyp_tacc_cnt));
+    //printk("\t\t\t\ttail cpu %u, place %d, cnt %d\n", smp_processor_id(), place, this_cpu(tacc).cnt);
 
-    ASSERT(this_cpu(hyp_tacc_cnt) > 0);
+    ASSERT(this_cpu(tacc).cnt > 0);
 
-    if (this_cpu(hyp_tacc_cnt) == 1)
+    if (this_cpu(tacc).cnt == 1)
     {
         s_time_t now = NOW();
         spin_lock(per_cpu(schedule_data,smp_processor_id()).schedule_lock);
@@ -1609,8 +1709,10 @@ void hyp_tacc_tail(int place)
         spin_unlock(per_cpu(schedule_data,smp_processor_id()).schedule_lock);
     }
 
-    this_cpu(hyp_tacc_cnt)--;
+    this_cpu(tacc).cnt--;
 }
+
+#endif
 
 void context_saved(struct vcpu *prev)
 {
@@ -1668,7 +1770,7 @@ static int cpu_schedule_up(unsigned int cpu)
     sd->curr = idle_vcpu[cpu];
     init_timer(&sd->s_timer, s_timer_fn, NULL, cpu);
     atomic_set(&sd->urgent_count, 0);
-    per_cpu(hyp_tacc_cnt, cpu) = 1;
+//    per_cpu(tacc, cpu).state = TACC_IDLE;
 
     /* Boot CPU is dealt with later in scheduler_init(). */
     if ( cpu == 0 )
@@ -1727,7 +1829,7 @@ static void cpu_schedule_down(unsigned int cpu)
 
     kill_timer(&sd->s_timer);
 
-    per_cpu(hyp_tacc_cnt, cpu) = 0;
+//    per_cpu(tacc, cpu).irq_cnt = 0;
 }
 
 static int cpu_schedule_callback(

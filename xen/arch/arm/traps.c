@@ -2187,10 +2187,7 @@ void do_trap_guest_sync(struct cpu_user_regs *regs)
         inject_undef_exception(regs, hsr);
     }
 
-    local_irq_disable();
-    hyp_tacc_head(1);
-
-    /*we will call tacc tail from the leave_hypervisor_tail*/
+//    tacc_hyp(1);
 }
 
 void do_trap_hyp_sync(struct cpu_user_regs *regs)
@@ -2247,31 +2244,27 @@ void do_trap_guest_serror(struct cpu_user_regs *regs)
 
     __do_trap_serror(regs, true);
 
-    local_irq_disable();
-    hyp_tacc_head(2);
+//    tacc_hyp(2);
 }
 
 void do_trap_irq(struct cpu_user_regs *regs)
 {
+//    tacc_irq_enter(1);
     enter_hypervisor_head(regs);
 
     gic_interrupt(regs, 0);
 
-    if ( !guest_mode(regs) )
-        hyp_tacc_tail(5);
-    /* for returning to guest we will call hyp_tacc_tail() from leave_hypervisor_tail()*/
+//    tacc_irq_exit(1);
 }
 
 
 void do_trap_fiq(struct cpu_user_regs *regs)
 {
+//    tacc_irq_enter(2);
     enter_hypervisor_head(regs);
 
     gic_interrupt(regs, 1);
-
-    if ( !guest_mode(regs) )
-        hyp_tacc_tail(6);
-    /* for returning to guest we will call hyp_tacc_tail() from leave_hypervisor_tail()*/
+//    tacc_irq_exit(2);
 }
 
 static void check_for_pcpu_work(void)
@@ -2316,6 +2309,7 @@ static void check_for_vcpu_work(void)
 void leave_hypervisor_tail(void)
 {
     local_irq_disable();
+//    tacc_hyp(1);
 
     check_for_vcpu_work();
     check_for_pcpu_work();
@@ -2334,14 +2328,13 @@ void leave_hypervisor_tail(void)
      */
     SYNCHRONIZE_SERROR(SKIP_SYNCHRONIZE_SERROR_ENTRY_EXIT);
 
-    hyp_tacc_tail(1234);
-
     /*
      * The hypervisor runs with the workaround always present.
      * If the guest wants it disabled, so be it...
      */
     if ( needs_ssbd_flip(current) )
         arm_smccc_1_1_smc(ARM_SMCCC_ARCH_WORKAROUND_2_FID, 0, NULL);
+//    tacc_guest(1);
 }
 
 /*
