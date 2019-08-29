@@ -2243,28 +2243,21 @@ void do_trap_guest_serror(struct cpu_user_regs *regs)
     enter_hypervisor_head(regs);
 
     __do_trap_serror(regs, true);
-
-//    tacc_hyp(2);
 }
 
 void do_trap_irq(struct cpu_user_regs *regs)
 {
-//    tacc_irq_enter(1);
     enter_hypervisor_head(regs);
 
     gic_interrupt(regs, 0);
-
-//    tacc_irq_exit(1);
 }
 
 
 void do_trap_fiq(struct cpu_user_regs *regs)
 {
-//    tacc_irq_enter(2);
     enter_hypervisor_head(regs);
 
     gic_interrupt(regs, 1);
-//    tacc_irq_exit(2);
 }
 
 static void check_for_pcpu_work(void)
@@ -2309,7 +2302,6 @@ static void check_for_vcpu_work(void)
 void leave_hypervisor_tail(void)
 {
     local_irq_disable();
-//    tacc_hyp(1);
 
     check_for_vcpu_work();
     check_for_pcpu_work();
@@ -2334,7 +2326,6 @@ void leave_hypervisor_tail(void)
      */
     if ( needs_ssbd_flip(current) )
         arm_smccc_1_1_smc(ARM_SMCCC_ARCH_WORKAROUND_2_FID, 0, NULL);
-//    tacc_guest(1);
 }
 
 /*

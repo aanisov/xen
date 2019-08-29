@@ -166,6 +166,8 @@ struct xen_sysctl_cpuinfo {
     uint64_aligned_t idletime;
     uint64_aligned_t hyptime;
     uint64_aligned_t guesttime;
+    uint64_aligned_t irqtime;
+    uint64_aligned_t gsynctime;
 };
 typedef struct xen_sysctl_cpuinfo xen_sysctl_cpuinfo_t;
 DEFINE_XEN_GUEST_HANDLE(xen_sysctl_cpuinfo_t);

@@ -999,14 +999,30 @@ extern void dump_runq(unsigned char key);
 
 void arch_do_physinfo(struct xen_sysctl_physinfo *pi);
 
+enum TACC_STATES {
+    TACC_HYP = 0,
+    TACC_GUEST = 1,
+    TACC_IDLE = 2,
+    TACC_IRQ = 3,
+    TACC_GSYNC = 4,
+    TACC_STATES_MAX
+};
+
+struct tacc
+{
+    s_time_t state_time[TACC_STATES_MAX];
+    s_time_t state_time_delta[TACC_STATES_MAX];
+    s_time_t state_entry_time;
+    spinlock_t lock;
+    int state;
+    s_time_t irq_enter_time;
+    int irq_cnt;
+};
+
 void tacc_hyp(int place);
-void tacc_guest(int place);
-void tacc_irq_enter(int place);
-void tacc_irq_exit(int place);
+void tacc_idle(int place);
 
-
-//void hyp_tacc_head(int place);
-//void hyp_tacc_tail(int place);
+DECLARE_PER_CPU(struct tacc, tacc);
 
 #endif /* __SCHED_H__ */
 

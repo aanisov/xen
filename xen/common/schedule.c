@@ -208,35 +208,36 @@ void vcpu_runstate_get(struct vcpu *v, struct vcpu_runstate_info *runstate)
 
 uint64_t get_cpu_idle_time(unsigned int cpu)
 {
-    struct vcpu_runstate_info state = { 0 };
-    struct vcpu *v = idle_vcpu[cpu];
+    struct tacc *tacc = &per_cpu(tacc, cpu);
 
-    if ( cpu_online(cpu) && v )
-        vcpu_runstate_get(v, &state);
-
-    return state.time[RUNSTATE_blocked];
+    return tacc->state_time[TACC_IDLE];
 }
 
 uint64_t get_cpu_guest_time(unsigned int cpu)
 {
-    struct vcpu_runstate_info state = { 0 };
-    struct vcpu *v = idle_vcpu[cpu];
+    struct tacc *tacc = &per_cpu(tacc, cpu);
 
-    if ( cpu_online(cpu) && v )
-        vcpu_runstate_get(v, &state);
-
-    return state.time[RUNSTATE_runnable];
+    return tacc->state_time[TACC_GUEST];
 }
 
 uint64_t get_cpu_hyp_time(unsigned int cpu)
 {
-    struct vcpu_runstate_info state = { 0 };
-    struct vcpu *v = idle_vcpu[cpu];
+    struct tacc *tacc = &per_cpu(tacc, cpu);
 
-    if ( cpu_online(cpu) && v )
-        vcpu_runstate_get(v, &state);
+    return tacc->state_time[TACC_HYP];
+}
 
-    return state.time[RUNSTATE_running];
+uint64_t get_cpu_irq_time(unsigned int cpu)
+{
+    struct tacc *tacc = &per_cpu(tacc, cpu);
+
+    return tacc->state_time[TACC_IRQ];
+}
+uint64_t get_cpu_gsync_time(unsigned int cpu)
+{
+    struct tacc *tacc = &per_cpu(tacc, cpu);
+
+    return tacc->state_time[TACC_GSYNC];
 }
 
 /*
@@ -1560,47 +1561,26 @@ static void schedule(void)
     context_switch(prev, next);
 }
 
-enum TACC_STATES {
-    TACC_HYP = 0,
-    TACC_GUEST = 1,
-    TACC_IDLE = 2,
-    TACC_IRQ = 3,
-    TACC_GSYNC = 4,
-    TACC_STATES_MAX
-};
-
-struct tacc
-{
-    s_time_t state_time[TACC_STATES_MAX];
-    s_time_t state_time_delta[TACC_STATES_MAX];
-    s_time_t state_entry_time;
-    spinlock_t lock;
-    int state;
-    s_time_t irq_enter_time;
-    int irq_cnt;
-};
 DEFINE_PER_CPU(struct tacc, tacc);
 
 static void tacc_state_change(enum TACC_STATES new_state)
 {
     s_time_t now, delta;
     struct tacc* tacc = &this_cpu(tacc);
+    unsigned long flags;
 
-    local_irq_disable();
+    local_irq_save(flags);
     now = NOW();
-    delta = now - this_cpu(tacc).state_entry_time;
+    delta = now - tacc->state_entry_time;
 
-//    /* We are not going through this path with IRQ*/
-//    ASSERT(new_state != TACC_IRQ);
-//    ASSERT(tacc->state != TACC_IRQ);
-    /* We are not expecting reenterability for states other that IRQ */
+    /* We are not expecting states reenterability (at least through this function)*/
     ASSERT(new_state != tacc->state);
 
 
-    tacc->state_time_delta[this_cpu(tacc).state] += delta;
+    tacc->state_time[tacc->state] += delta;
     tacc->state = new_state;
     tacc->state_entry_time = now;
-    local_irq_enable();
+    local_irq_restore(flags);
 }
 
 void tacc_hyp(int place)
@@ -1617,7 +1597,7 @@ void tacc_guest(int place)
 
 void tacc_idle(int place)
 {
-    printk("\thead cpu %u, place %d\n", smp_processor_id(), place);
+//    printk("\tidle cpu %u, place %d\n", smp_processor_id(), place);
     tacc_state_change(TACC_IDLE);
 }
 
@@ -1629,6 +1609,7 @@ void tacc_gsync(int place)
 
 void tacc_irq_enter(int place)
 {
+#if 0
     struct tacc* tacc = &this_cpu(tacc);
 
 //    printk("\ttacc_irq_enter %u, place %d, cnt %d\n", smp_processor_id(), place, this_cpu(tacc).irq_cnt);
@@ -1641,10 +1622,12 @@ void tacc_irq_enter(int place)
     }
 
     tacc->irq_cnt++;
+#endif
 }
 
 void tacc_irq_exit(int place)
 {
+#if 0
     struct tacc* tacc = &this_cpu(tacc);
 
 //    printk("\ttacc_irq_exit %u, place %d, cnt %d\n", smp_processor_id(), place, tacc->irq_cnt);
@@ -1655,64 +1638,11 @@ void tacc_irq_exit(int place)
         s_time_t now = NOW();
         tacc->state_time_delta[TACC_IRQ] = now - tacc->irq_enter_time;
         tacc->irq_enter_time = 0;
-//        tacc_hyp(3);
     }
 
     tacc->irq_cnt--;
-}
-
-#if 0 
-void hyp_tacc_head(int place)
-{
-    //printk("\thead cpu %u, place %d, cnt %d\n", smp_processor_id(), place, this_cpu(tacc).cnt);
-
-    ASSERT(this_cpu(tacc).cnt >= 0);
-
-    if ( this_cpu(tacc).cnt == 0 )
-    {
-        s_time_t now = NOW();
-        spin_lock(per_cpu(schedule_data,smp_processor_id()).schedule_lock);
-        /*
-         * Stop time accounting for guest (guest vcpu)
-         */
-        ASSERT( (current->runstate.state_entry_time & XEN_RUNSTATE_UPDATE) == 0);
-        current->runtime += now - current->runstate.state_entry_time;
-        vcpu_runstate_change(current, RUNSTATE_runnable, now);
-        /*
-         * Start time accounting for hyp (idle vcpu)
-         */
-        vcpu_runstate_change(idle_vcpu[smp_processor_id()], RUNSTATE_running, now);
-        spin_unlock(per_cpu(schedule_data,smp_processor_id()).schedule_lock);
-    }
-
-    this_cpu(tacc).cnt++;
-}
-
-void hyp_tacc_tail(int place)
-{
-    //printk("\t\t\t\ttail cpu %u, place %d, cnt %d\n", smp_processor_id(), place, this_cpu(tacc).cnt);
-
-    ASSERT(this_cpu(tacc).cnt > 0);
-
-    if (this_cpu(tacc).cnt == 1)
-    {
-        s_time_t now = NOW();
-        spin_lock(per_cpu(schedule_data,smp_processor_id()).schedule_lock);
-        /*
-         * Stop time accounting for guest (guest vcpu)
-         */
-        vcpu_runstate_change(idle_vcpu[smp_processor_id()], RUNSTATE_runnable, now);
-        /*
-         * Start time accounting for hyp (idle vcpu)
-         */
-        vcpu_runstate_change(current, RUNSTATE_running, now);
-        spin_unlock(per_cpu(schedule_data,smp_processor_id()).schedule_lock);
-    }
-
-    this_cpu(tacc).cnt--;
-}
-
 #endif
+}
 
 void context_saved(struct vcpu *prev)
 {
@@ -1770,7 +1700,6 @@ static int cpu_schedule_up(unsigned int cpu)
     sd->curr = idle_vcpu[cpu];
     init_timer(&sd->s_timer, s_timer_fn, NULL, cpu);
     atomic_set(&sd->urgent_count, 0);
-//    per_cpu(tacc, cpu).state = TACC_IDLE;
 
     /* Boot CPU is dealt with later in scheduler_init(). */
     if ( cpu == 0 )
@@ -1828,8 +1757,6 @@ static void cpu_schedule_down(unsigned int cpu)
     sd->sched_priv = NULL;
 
     kill_timer(&sd->s_timer);
-
-//    per_cpu(tacc, cpu).irq_cnt = 0;
 }
 
 static int cpu_schedule_callback(

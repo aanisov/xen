@@ -73,13 +73,13 @@ static void do_idle(void)
     process_pending_softirqs();
 
     local_irq_disable();
-    idle_vcpu_runstate_change(cpu, RUNSTATE_blocked, NOW());
+    tacc_idle(1);
     if ( cpu_is_haltable(cpu) )
     {
         dsb(sy);
         wfi();
     }
-    idle_vcpu_runstate_change(cpu, RUNSTATE_running, NOW());
+    tacc_hyp(2);
     local_irq_enable();
 
     sched_tick_resume();
