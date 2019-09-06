@@ -1722,7 +1722,7 @@ void burn_credits(struct csched2_runqueue_data *rqd,
         return;
     }
 
-    delta = now - svc->start_time;
+    delta = tacc_consume_guest_time(); /*it will die on assert here*/
 
     if ( unlikely(delta <= 0) )
     {
@@ -1738,8 +1738,6 @@ void burn_credits(struct csched2_runqueue_data *rqd,
 
     if ( has_cap(svc) )
         svc->budget -= delta;
-
-    svc->start_time = now;
 
  out:
     if ( unlikely(tb_init_done) )
