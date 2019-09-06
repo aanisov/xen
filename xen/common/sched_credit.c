@@ -333,7 +333,7 @@ static void burn_credits(struct csched_vcpu *svc, s_time_t now)
     /* Assert svc is current */
     ASSERT( svc == CSCHED_VCPU(curr_on_cpu(svc->vcpu->processor)) );
 
-    if ( (delta = now - svc->start_time) <= 0 )
+    if ( (delta = tacc_consume_guest_time()) <= 0 )
         return;
 
     val = delta * CSCHED_CREDITS_PER_MSEC + svc->residual;
@@ -341,7 +341,6 @@ static void burn_credits(struct csched_vcpu *svc, s_time_t now)
     credits = val;
     ASSERT(credits == val); /* make sure we haven't truncated val */
     atomic_sub(credits, &svc->credit);
-    svc->start_time += (credits * MILLISECS(1)) / CSCHED_CREDITS_PER_MSEC;
 }
 
 static bool_t __read_mostly opt_tickle_one_idle = 1;
