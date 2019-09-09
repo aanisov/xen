@@ -1539,6 +1539,102 @@ static void schedule(void)
     context_switch(prev, next);
 }
 
+DEFINE_PER_CPU(struct tacc, tacc);
+
+static void tacc_state_change(enum TACC_STATES new_state)
+{
+    s_time_t now, delta;
+    struct tacc* tacc = &this_cpu(tacc);
+    unsigned long flags;
+
+    local_irq_save(flags);
+    now = NOW();
+    delta = now - tacc->state_entry_time;
+
+    /* We are not expecting states reenterability (at least through this function)*/
+    ASSERT(new_state != tacc->state);
+
+    tacc->state_time[tacc->state] += delta - tacc->irq_time;
+    tacc->state_time[TACC_IRQ] += tacc->irq_time;
+    tacc->irq_time = 0;
+    tacc->state = new_state;
+    tacc->state_entry_time = now;
+    local_irq_restore(flags);
+}
+
+void tacc_hyp(int place)
+{
+//    printk("\ttacc_hyp %u, place %d\n", smp_processor_id(), place);
+    tacc_state_change(TACC_HYP);
+}
+
+void tacc_guest(int place)
+{
+//    printk("\ttacc_guest %u, place %d\n", smp_processor_id(), place);
+    tacc_state_change(TACC_GUEST);
+}
+
+void tacc_idle(int place)
+{
+//    printk("\tidle cpu %u, place %d\n", smp_processor_id(), place);
+    tacc_state_change(TACC_IDLE);
+}
+
+void tacc_gsync(int place)
+{
+//    printk("\ttacc_gsync %u, place %d\n", smp_processor_id(), place);
+    tacc_state_change(TACC_GSYNC);
+}
+
+void tacc_irq_enter(int place)
+{
+    struct tacc* tacc = &this_cpu(tacc);
+
+//    printk("\ttacc_irq_enter %u, place %d, cnt %d\n", smp_processor_id(), place, this_cpu(tacc).irq_cnt);
+    ASSERT(!local_irq_is_enabled());
+    ASSERT(tacc->irq_cnt >= 0);
+
+    if ( tacc->irq_cnt == 0 )
+    {
+        tacc->irq_enter_time = NOW();
+    }
+
+    tacc->irq_cnt++;
+}
+
+void tacc_irq_exit(int place)
+{
+    struct tacc* tacc = &this_cpu(tacc);
+
+//    printk("\ttacc_irq_exit %u, place %d, cnt %d\n", smp_processor_id(), place, tacc->irq_cnt);
+    ASSERT(!local_irq_is_enabled());
+    ASSERT(tacc->irq_cnt > 0);
+    if ( tacc->irq_cnt == 1 )
+    {
+        s_time_t now = NOW();
+        tacc->irq_time = now - tacc->irq_enter_time;
+    }
+
+    tacc->irq_cnt--;
+}
+
+s_time_t tacc_consume_guest_time()
+{
+    struct tacc* tacc = &this_cpu(tacc);
+    s_time_t elapsed_guest_time;
+    s_time_t new_guest_time = tacc->state_time[TACC_GUEST] +
+                              tacc->state_time[TACC_GSYNC];
+
+    ASSERT(!local_irq_is_enabled());
+    ASSERT(tacc->state != TACC_GUEST);
+    ASSERT(tacc->state != TACC_GSYNC);
+
+    elapsed_guest_time = new_guest_time - tacc->guest_time;
+    tacc->guest_time = new_guest_time;
+
+    return elapsed_guest_time;
+}
+
 void context_saved(struct vcpu *prev)
 {
     /* Clear running flag /after/ writing context to memory. */
