@@ -324,16 +324,15 @@ runq_remove(struct csched_vcpu *svc)
     __runq_remove(svc);
 }
 
-static void burn_credits(struct csched_vcpu *svc, s_time_t now)
+static void burn_credits(struct csched_vcpu *svc, s_time_t delta)
 {
-    s_time_t delta;
     uint64_t val;
     unsigned int credits;
 
     /* Assert svc is current */
     ASSERT( svc == CSCHED_VCPU(curr_on_cpu(svc->vcpu->processor)) );
 
-    if ( (delta = tacc_consume_guest_time()) <= 0 ) /*it will die on assert here*/
+    if ( delta <= 0 )
         return;
 
     val = delta * CSCHED_CREDITS_PER_MSEC + svc->residual;
@@ -955,7 +954,7 @@ csched_vcpu_acct(struct csched_private *prv, unsigned int cpu)
     /*
      * Update credits
      */
-    burn_credits(svc, NOW());
+    burn_credits(svc, NOW() - svc->start_time);
 
     /*
      * Put this VCPU and domain back on the active list if it was
@@ -1855,14 +1854,14 @@ csched_schedule(
                     (unsigned char *)&d);
     }
 
-    runtime = now - current->runstate.state_entry_time;
+    runtime = now - scurr->start_time;
     if ( runtime < 0 ) /* Does this ever happen? */
         runtime = 0;
 
     if ( !is_idle_vcpu(scurr->vcpu) )
     {
         /* Update credits of a non-idle VCPU. */
-        burn_credits(scurr, now);
+        burn_credits(scurr, runtime);
         scurr->start_time -= now;
         scurr->last_sched_time = now;
     }
