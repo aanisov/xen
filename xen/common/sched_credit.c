@@ -954,7 +954,8 @@ csched_vcpu_acct(struct csched_private *prv, unsigned int cpu)
     /*
      * Update credits
      */
-    burn_credits(svc, NOW() - svc->start_time);
+    burn_credits(svc, tacc_get_guest_time_cpu(svc->vcpu->processor) - 
+           svc->vcpu->pcpu_guest_time);
 
     /*
      * Put this VCPU and domain back on the active list if it was
@@ -1854,7 +1855,8 @@ csched_schedule(
                     (unsigned char *)&d);
     }
 
-    runtime = now - scurr->start_time;
+    runtime = tacc_get_guest_time(&this_cpu(tacc)) - 
+              current->pcpu_guest_time;
     if ( runtime < 0 ) /* Does this ever happen? */
         runtime = 0;
 

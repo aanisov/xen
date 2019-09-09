@@ -1571,10 +1571,12 @@ static void tacc_state_change(enum TACC_STATES new_state)
     unsigned long flags;
 
     local_irq_save(flags);
+    tacc_lock(tacc);
+
     now = NOW();
     delta = now - tacc->state_entry_time;
 
-    /* We are not expecting states reenterability (at least through this function)*/
+    /* We do not expect states reenterability (at least through this function)*/
     ASSERT(new_state != tacc->state);
 
     tacc->state_time[tacc->state] += delta - tacc->irq_time;
@@ -1582,6 +1584,8 @@ static void tacc_state_change(enum TACC_STATES new_state)
     tacc->irq_time = 0;
     tacc->state = new_state;
     tacc->state_entry_time = now;
+
+    tacc_unlock(tacc);
     local_irq_restore(flags);
 }
 
@@ -1639,23 +1643,6 @@ void tacc_irq_exit(int place)
     }
 
     tacc->irq_cnt--;
-}
-
-s_time_t tacc_consume_guest_time()
-{
-    struct tacc* tacc = &this_cpu(tacc);
-    s_time_t elapsed_guest_time;
-    s_time_t new_guest_time = tacc->state_time[TACC_GUEST] +
-                              tacc->state_time[TACC_GSYNC];
-
-    ASSERT(!local_irq_is_enabled());
-    ASSERT(tacc->state != TACC_GUEST);
-    ASSERT(tacc->state != TACC_GSYNC);
-
-    elapsed_guest_time = new_guest_time - tacc->guest_time;
-    tacc->guest_time = new_guest_time;
-
-    return elapsed_guest_time;
 }
 
 void context_saved(struct vcpu *prev)

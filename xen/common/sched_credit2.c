@@ -1342,7 +1342,8 @@ static inline bool is_preemptable(const struct csched2_vcpu *svc,
         return true;
 
     ASSERT(svc->vcpu->is_running);
-    return now - svc->vcpu->runstate.state_entry_time >
+    return tacc_get_guest_time_cpu(svc->vcpu->processor) - 
+           svc->vcpu->pcpu_guest_time >
            ratelimit - CSCHED2_RATELIMIT_TICKLE_TOLERANCE;
 }
 
@@ -1722,7 +1723,8 @@ void burn_credits(struct csched2_runqueue_data *rqd,
         return;
     }
 
-    delta = tacc_consume_guest_time(); /*it will die on assert here*/
+    delta = tacc_get_guest_time_cpu(svc->vcpu->processor) - 
+            svc->vcpu->pcpu_guest_time;
 
     if ( unlikely(delta <= 0) )
     {
@@ -1738,6 +1740,8 @@ void burn_credits(struct csched2_runqueue_data *rqd,
 
     if ( has_cap(svc) )
         svc->budget -= delta;
+
+    svc->vcpu->pcpu_guest_time += delta;
 
  out:
     if ( unlikely(tb_init_done) )
@@ -3187,8 +3191,9 @@ csched2_runtime(const struct scheduler *ops, int cpu,
     {
         s_time_t ratelimit_min = MICROSECS(prv->ratelimit_us);
         if ( snext->vcpu->is_running )
-            ratelimit_min = snext->vcpu->runstate.state_entry_time +
-                            MICROSECS(prv->ratelimit_us) - now;
+            ratelimit_min = tacc_get_guest_time_cpu(snext->vcpu->processor) - 
+                            snext->vcpu->pcpu_guest_time +
+                            MICROSECS(prv->ratelimit_us);
         if ( ratelimit_min > min_time )
             min_time = ratelimit_min;
     }
@@ -3263,6 +3268,7 @@ runq_candidate(struct csched2_runqueue_data *rqd,
     struct csched2_vcpu *snext = NULL;
     struct csched2_private *prv = csched2_priv(per_cpu(scheduler, cpu));
     bool yield = false, soft_aff_preempt = false;
+    s_time_t guest_time;
 
     *skipped = 0;
 
@@ -3284,7 +3290,8 @@ runq_candidate(struct csched2_runqueue_data *rqd,
      * no point forcing it to do so until rate limiting expires.
      */
     if ( !yield && prv->ratelimit_us && vcpu_runnable(scurr->vcpu) &&
-         (now - scurr->vcpu->runstate.state_entry_time) <
+         (guest_time = tacc_get_guest_time_cpu(scurr->vcpu->processor) - 
+          scurr->vcpu->pcpu_guest_time) <
           MICROSECS(prv->ratelimit_us) )
     {
         if ( unlikely(tb_init_done) )
@@ -3295,7 +3302,7 @@ runq_candidate(struct csched2_runqueue_data *rqd,
             } d;
             d.dom = scurr->vcpu->domain->domain_id;
             d.vcpu = scurr->vcpu->vcpu_id;
-            d.runtime = now - scurr->vcpu->runstate.state_entry_time;
+            d.runtime = guest_time;
             __trace_var(TRC_CSCHED2_RATELIMIT, 1,
                         sizeof(d),
                         (unsigned char *)&d);

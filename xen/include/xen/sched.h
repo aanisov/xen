@@ -266,6 +266,8 @@ struct vcpu
 
     struct evtchn_fifo_vcpu *evtchn_fifo;
 
+    s_time_t    pcpu_guest_time;
+
     /* vPCI per-vCPU area, used to store data for long running operations. */
     struct vpci_vcpu vpci;
 
@@ -1008,6 +1010,8 @@ enum TACC_STATES {
     TACC_STATES_MAX
 };
 
+#undef CONFIG_TACC_LOCKLESS
+
 struct tacc
 {
     s_time_t state_time[TACC_STATES_MAX];
@@ -1019,13 +1023,45 @@ struct tacc
     s_time_t irq_enter_time;
     s_time_t irq_time;
     int irq_cnt;
+#ifndef CONFIG_TACC_LOCKLESS
+    spinlock_t tacc_lock;
+#endif
 };
+
+DECLARE_PER_CPU(struct tacc, tacc);
 
 void tacc_hyp(int place);
 void tacc_idle(int place);
-s_time_t tacc_consume_guest_time(void);
 
-DECLARE_PER_CPU(struct tacc, tacc);
+inline s_time_t tacc_get_guest_time(struct tacc *tacc)
+{
+    s_time_t guest_time;
+
+    guest_time = tacc->state_time[TACC_GUEST];
+    guest_time += tacc->state_time[TACC_GSYNC];
+
+    return guest_time;
+}
+
+#ifndef CONFIG_TACC_LOCKLESS
+#define     tacc_lock(tacc) spin_lock(&tacc->tacc_lock)
+#define     tacc_unlock(tacc) spin_unlock(&tacc->tacc_lock)
+
+inline s_time_t tacc_get_guest_time_cpu(int cpu)
+{
+    struct tacc* tacc = &per_cpu(tacc, cpu);
+    s_time_t guest_time;
+
+    tacc_lock(tacc);
+    guest_time = tacc_get_guest_time(tacc);
+    tacc_unlock(tacc);
+
+    return guest_time;
+}
+#else
+#define     tacc_lock(tacc)
+#define     tacc_unlock(tacc)
+#endif
 
 #endif /* __SCHED_H__ */
 
