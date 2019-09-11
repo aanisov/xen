@@ -1028,6 +1028,9 @@ struct tacc
     s_time_t irq_enter_time;
     s_time_t irq_time;
     int irq_cnt;
+#ifdef CONFIG_TACC_NEEDS_LOCK
+    spinlock_t tacc_lock;
+#endif
 };
 
 DECLARE_PER_CPU(struct tacc, tacc);
@@ -1040,6 +1043,14 @@ inline s_time_t tacc_get_guest_time_delta(void)
 {
     return tacc_get_guest_time(&this_cpu(tacc)) - current->pcpu_guest_time;
 }
+
+#ifdef CONFIG_TACC_NEEDS_LOCK
+s_time_t tacc_get_guest_time_cpu(int cpu);
+inline s_time_t tacc_get_guest_time_delta_vcpu(struct vcpu* vcpu)
+{
+    return tacc_get_guest_time_cpu(vcpu->processor) - vcpu->pcpu_guest_time;
+}
+#endif
 
 #endif /* __SCHED_H__ */
 
