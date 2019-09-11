@@ -2314,6 +2314,14 @@ static struct sched_unit *sched_wait_rendezvous_in(struct sched_unit *prev,
     return prev->next_task;
 }
 
+#ifdef CONFIG_TACC_NEEDS_LOCK
+#define     tacc_lock(tacc) spin_lock(&tacc->tacc_lock)
+#define     tacc_unlock(tacc) spin_unlock(&tacc->tacc_lock)
+#else
+#define     tacc_lock(tacc)
+#define     tacc_unlock(tacc)
+#endif
+
 DEFINE_PER_CPU(struct tacc, tacc);
 
 static void tacc_state_change(enum TACC_STATES new_state)
@@ -2323,6 +2331,7 @@ static void tacc_state_change(enum TACC_STATES new_state)
     unsigned long flags;
 
     local_irq_save(flags);
+    tacc_lock(tacc);
 
     now = NOW();
     delta = now - tacc->state_entry_time;
@@ -2336,6 +2345,7 @@ static void tacc_state_change(enum TACC_STATES new_state)
     tacc->state = new_state;
     tacc->state_entry_time = now;
 
+    tacc_unlock(tacc);
     local_irq_restore(flags);
 }
 
@@ -2373,7 +2383,9 @@ void tacc_irq_enter(int place)
 
     if ( tacc->irq_cnt == 0 )
     {
+        tacc_lock(tacc);
         tacc->irq_enter_time = NOW();
+        tacc_unlock(tacc);
     }
 
     tacc->irq_cnt++;
@@ -2388,8 +2400,10 @@ void tacc_irq_exit(int place)
     ASSERT(tacc->irq_cnt > 0);
     if ( tacc->irq_cnt == 1 )
     {
+        tacc_lock(tacc);
         tacc->irq_time = NOW() - tacc->irq_enter_time;
         tacc->irq_enter_time = 0;
+        tacc_unlock(tacc);
     }
 
     tacc->irq_cnt--;
@@ -2404,6 +2418,35 @@ s_time_t tacc_get_guest_time(struct tacc *tacc)
 
     return guest_time;
 }
+
+#ifdef CONFIG_TACC_NEEDS_LOCK
+s_time_t tacc_get_guest_time_cpu(int cpu)
+{
+    struct tacc* tacc = &per_cpu(tacc, cpu);
+    s_time_t guest_time;
+    s_time_t now;
+
+    tacc_lock(tacc);
+
+    now = NOW();
+    guest_time = tacc_get_guest_time(tacc);
+    if (tacc->state == TACC_GUEST || tacc->state == TACC_GSYNC)
+    {
+        guest_time += NOW() - tacc->state_entry_time;
+    }
+
+    if (tacc->irq_enter_time)
+    {
+        guest_time -= NOW() - tacc->irq_enter_time;
+    }
+
+    guest_time -= tacc->irq_time;
+
+    tacc_unlock(tacc);
+
+    return guest_time;
+}
+#endif
 
 static void sched_slave(void)
 {
