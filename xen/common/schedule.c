@@ -2395,6 +2395,16 @@ void tacc_irq_exit(int place)
     tacc->irq_cnt--;
 }
 
+s_time_t tacc_get_guest_time(struct tacc *tacc)
+{
+    s_time_t guest_time;
+
+    guest_time = tacc->state_time[TACC_GUEST];
+    guest_time += tacc->state_time[TACC_GSYNC];
+
+    return guest_time;
+}
+
 static void sched_slave(void)
 {
     struct vcpu          *v, *vprev = current;
