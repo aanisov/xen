@@ -433,7 +433,7 @@ static bool __init allocate_bank_memory(struct domain *d,
 static void __init allocate_memory(struct domain *d, struct kernel_info *kinfo)
 {
     unsigned int i;
-    unsigned long bank_size;
+    paddr_t bank_size;
 
     printk(XENLOG_INFO "Allocating mappings totalling %ldMB for %pd:\n",
            /* Don't want format this as PRIpaddr (16 digit hex) */
