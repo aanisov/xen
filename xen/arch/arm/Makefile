@@ -102,7 +102,7 @@ endif
 
 ifeq ($(armds),y)
 $(TARGET)-syms: prelink.o xen.scat
-	armlink --scatter="xen.scat" --edit="xen.steer" --no_scanlib $(LDFLAGS) prelink.o $(BASEDIR)/common/symbols-dummy.o -o $@
+	armlink --scatter="xen.scat" --no_scanlib $(LDFLAGS) prelink.o $(BASEDIR)/common/symbols-dummy.o -o $@
 else
 $(TARGET)-syms: prelink.o xen.lds
 	$(LD) $(LDFLAGS) -T xen.lds -N prelink.o \
@@ -129,8 +129,6 @@ asm-offsets.s: $(TARGET_SUBARCH)/asm-offsets.c
 ifeq ($(armds),y)
 xen.scat: xen.scat.S
 	$(CC) -P -E --target=aarch64-arm-none-eabi -o $@ $<
-	sed -e 's/xen\.scat\.o:/xen\.scat:/g' <.xen.scat.d >.xen.scat.d.new
-	mv -f .xen.scat.d.new .xen.scat.d
 else
 xen.lds: xen.lds.S
 	$(CC) -P -E -Ui386 $(AFLAGS) -o $@ $<
