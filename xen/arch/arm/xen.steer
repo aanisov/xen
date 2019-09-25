@@ -1,0 +1,5 @@
+RESOLVE _srodata AS Load$$_rodata_bug_frames_0$$Base
+RENAME Load$$_text$$Base AS _stext
+RENAME Load$$_text$$Limit AS _etext
+RENAME Load$$_init_text$$Base AS _sinittext
+RENAME Load$$_init_text$$Limit AS _einittext
