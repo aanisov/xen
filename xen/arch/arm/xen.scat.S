@@ -109,17 +109,19 @@ LOAD XEN_VIRT_START
 ;#CONSTRUCTORS ????
   }
 
+;__start___ex_table  
   _data_ex_table AlignExpr(+0, SMP_CACHE_BYTES)
   {
     *(.ex_table)
   }
+;__stop___ex_table
 
-;__start___ex_table
+;__start___pre_ex_table
   _data_ex_table_pre +0
   {
     *(.ex_table.pre)
   }
-;__stop___ex_table
+;__stop___pre_ex_table
 
   _data_read_mostly +0
   {
@@ -233,7 +235,7 @@ LOAD XEN_VIRT_START
 
 
 ;__per_cpu_start
-  bss_percpu AlignExpr(+0, SMP_CACHE_BYTES)
+  _bss_percpu AlignExpr(+0, SMP_CACHE_BYTES)
   {
     *(.bss.percpu)
     *(.bss.percpu.read_mostly, OVERALIGN SMP_CACHE_BYTES)
